@@ -1,0 +1,3 @@
+[console_scripts]
+nexus-map = nexuscontroller.mappers.scientific:run
+nexus-server = nexuscontroller.server:run

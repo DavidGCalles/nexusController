@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nexuscontroller"
+version = "0.1.0"
+description = "Gamepad reader and mapping tools with WebSocket server"
+readme = "readme.md"
+authors = [ { name = "DavidGCalles" } ]
+license = { text = "MIT" }
+dependencies = [
+  "pygame",
+  "websockets",
+  "pyserial"
+]
+
+[project.urls]
+"homepage" = "https://example.invalid/"
+
+[project.scripts]
+nexus-server = "nexuscontroller.server:run"
+nexus-map = "nexuscontroller.mappers.scientific:run"
+
+[tool.setuptools.packages.find]
+where = ["src"]
