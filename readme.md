@@ -1,92 +1,91 @@
-# 🎮 ControlNexus — Gamepad Abstraction & Examples
+***
+# 🎮 ControlNexus — Gamepad Abstraction & Packaging
 
-ControlNexus normaliza entradas de gamepads y proporciona herramientas para mapear, depurar y exponer los datos por WebSocket o en un paquete binario compactado. Además incluye ejemplos (entre ellos un demo Canvas llamado CyberMaze).
+ControlNexus normaliza entradas de gamepads y proporciona herramientas para mapear, depurar y exponer los datos por WebSocket o en un paquete instalable de Python. El repositorio incluye los mappers interactivos y demos en `examples/`.
 
-Este README se actualiza para reflejar la estructura actual del repositorio, las dependencias y los cambios recientes (parametrización del generador de laberintos, dash destructivo, XP diferida, etc.).
+Este README fue actualizado para reflejar la nueva estructura del repositorio y el flujo de instalación/ejecución como paquete.
 
-## 🛠️ Requisitos
- - Python 3.10+ (probado con 3.12)
- - Paquetes pip: `pygame`, `websockets`, `pyserial` (si necesitas serial)
+## 🧭 Resumen de la nueva estructura
+- Código empaquetado: `src/nexuscontroller/`
+  - `src/nexuscontroller/core.py` — implementación principal (`InputSource`).
+  - `src/nexuscontroller/server.py` — servidor WebSocket con función `run()`.
+  - `src/nexuscontroller/default_config.json` — configuración por defecto incluida en el paquete.
+  - `src/nexuscontroller/mappers/` — versiones de los mappers con `run()` en cada módulo.
+- Ejemplos y herramientas de depuración se mantienen en la raíz: `examples/`, `debug/`.
 
-Instalación rápida:
+## ✅ Requisitos
+- Python 3.10+ (probado con 3.12)
+
+Dependencias (se instalarán desde `pyproject.toml` si instalas el paquete):
+- `pygame`
+- `websockets`
+- `pyserial` (opcional, para conectividad serial)
+
+## Instalación (editable — recomendado para desarrollo)
+En PowerShell, desde la raíz del repositorio:
 ```powershell
 python -m pip install --upgrade pip
-pip install pygame websockets pyserial
+python -m pip install -e .
 ```
 
-## ¿Qué hay en este repositorio?
- - `main.py` — Servidor asyncio que crea un WebSocket en `ws://localhost:8765` y transmite el JSON normalizado de `InputSource`.
- - `inputSource.py` — Lector principal usando `pygame` (headless). Normaliza ejes, aplica baseline/calibración y proporciona `to_json()` / `to_bytes()`.
- - `controller_config.json` — Archivo generado por los mappers con IDs semánticos de botones/ejes.
- - `mappers/` — Herramientas interactivas para mapear mandos:
-   - `scientific_mapper.py` — calibración automática de baseline y mapeo (recomendado).
-   - `robust_mapper.py`, `paranoid_mapper.py` — variantes con diferentes heurísticas.
- - `debug/` — scripts de depuración (raw input sniffer, pygame debug helper).
- - `examples/` — demos y utilidades front-end:
-   - `examples/cybermaze/` — juego Canvas (HTML + JS split en `config.js`, `maze.js`, `entities.js`, `input.js`, `main.js`).
-   - `examples/twinStick.html`, `viewer.html` — páginas de demostración.
+Esto instala el paquete en modo editable y crea los entry points CLI descritos abajo.
 
-## Ejecutar el backend (servidor de input)
-1. Conecta tu gamepad y genera `controller_config.json` si no lo tienes:
+Alternativa (sin instalar): exporta `src` en `PYTHONPATH` y usa los shims:
 ```powershell
-python mappers/scientific_mapper.py
+$env:PYTHONPATH = "src"
+python main.py    # shim que invoca nexuscontroller.server.run()
 ```
-Sigue las instrucciones en pantalla; el JSON resultante se guarda en `controller_config.json`.
 
-2. Ejecuta el servidor WebSocket:
+## Uso — comandos disponibles
+- Ejecutar el servidor WebSocket (recomendado tras `pip install -e .`):
 ```powershell
-python main.py
+nexus-server
 ```
-Salida esperada:
+o alternativamente:
+```powershell
+python -m nexuscontroller.server
 ```
-🎮 Backend Listo. Mando: <NOMBRE>
-📡 WebSocket Server en ws://localhost:8765
+
+- Ejecutar el mapper científico (entry point):
+```powershell
+nexus-map
+```
+o alternativamente:
+```powershell
+python -m nexuscontroller.mappers.scientific_mapper
 ```
 
-3. Abre cualquier cliente que consuma el JSON (por ejemplo `examples/cybermaze/cyberMaze.html`).
+Si no se instaló el paquete, agrega `src` a `PYTHONPATH` (ver arriba) para que `python main.py` funcione como antes.
 
-## Formatos de salida
+## Flujo rápido para usar el sistema
+1. Instala editable: `python -m pip install -e .`.
+2. Si necesitas generar/actualizar un mapeo de controlador:
+   - `nexus-map` (o `python -m nexuscontroller.mappers.scientific_mapper`).
+   - Esto generará un `controller_config.json` en el directorio de ejecución.
+3. Ejecuta el servidor de entrada:
+   - `nexus-server` (o `python -m nexuscontroller.server`).
+4. Abre un cliente (por ejemplo `examples/cybermaze/cyberMaze.html`) que se conecte a `ws://localhost:8765`.
 
-### 1) WebSocket — JSON (humano-legible)
- - Frecuencia: ~60Hz
- - Ejes normalizados en [-1.0, 1.0], botones 0/1.
- - Función utilitaria: `InputSource.to_json(data)` devuelve la cadena JSON.
+## Notas importantes
+- El paquete incluye `default_config.json` usado como fallback cuando no se pasa un `config_path` a `InputSource`.
+- Las entradas de los mappers quedan en `src/nexuscontroller/mappers/` y exponen `run()` para ser usadas como entry points.
+- Los shims en la raíz (`main.py`, `mappers/*.py`) siguen presentes para compatibilidad local, pero la forma recomendada es instalar el paquete editable y usar los entry points.
 
-Ejemplo (claves principales): `a,b,x,y,lb,rb,back,start,l3,r3,up,down,left,right,lx,ly,rx,ry,lt,rt`
+## Formatos de salida (resumen)
+- JSON via WebSocket: ejes normalizados en `[-1.0, 1.0]`, botones `0/1`. (función: `InputSource.to_json`).
+- Binario: `InputSource.to_bytes(data)` usa formato `'<Hhhhhhh'` para empaquetado compacto.
 
-### 2) Fast Path — Binario
- - `InputSource.to_bytes(data)` empaqueta 14 bytes: `'<Hhhhhhh'`
- - Mapa de bits (botones) y escala de ejes a `int16` está en `inputSource.py`.
-
-## CyberMaze (demo)
-
-Ruta: `examples/cybermaze/`
-
- - Abrir `examples/cybermaze/cyberMaze.html` en un navegador moderno.
- - Ejecutar el backend (`python main.py`) para alimentar el juego.
-
-Notas importantes del demo:
- - El código del demo está dividido en archivos dentro del directorio `examples/cybermaze/` para facilitar lectura y mantenimiento: `config.js`, `maze.js`, `entities.js`, `input.js`, `main.js`.
- - Cambios recientes y comportamiento del juego:
-   - Parametrización del generador de laberintos (`mazeCorridorWidth`, `mazeBreakableBlockChance`, `mazeCarveSeed`, `mazeCarveSpacing` en `config.js`).
-   - Corridors construidos por bloques (carving por bloques) para obtener pasillos consistentes.
-   - Dash del jugador es destructivo (`playerDashIsDestructive`) y genera una explosión al final del dash.
-   - Si el Ray (habilidad) está desbloqueado y se mantiene RT, el dash mejora (más rápido/largo/mas daño): "ray-dash".
-   - XP por clearing stage: ahora se guarda en `player.pendingXP` y se aplica/procesa al continuar (evita level-ups instantáneos durante el overlay). Esto se puede ajustar en `config.js` con `xpPerStage`.
-
-## Configuración destacada (editar `examples/cybermaze/config.js`)
- - `mazeCorridorWidth` (int): ancho del pasillo en tiles (recomendado 2).
- - `mazeBreakableBlockChance` (0..1): probabilidad de que un bloque de muro sea destruible.
- - `mazeCarveSeed` (null|int): semilla para generar laberintos reproducibles.
- - `mazeCarveSpacing` (null|int): paso de carving (por defecto `mazeCorridorWidth * 2`).
- - `xpPerStage` (int): XP entregado al completar una escena (ahora diferido a `player.pendingXP`).
-
-## Desarrollo y notas internas
- - `inputSource.py` aplica baseline/rest correction a ejes según `controller_config.json` para evitar problemas con gatillos que reportan -1.0 en reposo.
- - Los mappers en `mappers/` ayudan a crear `controller_config.json` con distintos niveles de robustez.
- - Si habilitas `mazeCarveSeed`, la intención es usar un PRNG determinista. Actualmente el código usa `Math.random()` — puedo reemplazarlo por un PRNG basado en semilla si quieres reproducibilidad exacta.
+## Examples & Demo
+- `examples/cybermaze/` — demo Canvas que puede consumir el WebSocket del servidor.
 
 ## Troubleshooting rápido
- - Si no detecta el mando: cierra Steam, instala drivers oficiales y ejecuta los mappers.
- - Si los gatillos tienen offset: vuelve a correr `mappers/scientific_mapper.py`.
- - Si el demo no conecta: asegúrate de que `python main.py` esté corriendo y escucha en `ws://localhost:8765`.
+- Si `nexus-server` no se encuentra, asegúrate de haber corrido `python -m pip install -e .`.
+- Para ejecutar sin instalar, exporta `src` en `PYTHONPATH` y usa los shims (`python main.py`).
+- Si el mando no se detecta: cierra Steam/otros remapeadores, conecta el mando y vuelve a ejecutar el mapper.
+
+---
+
+Si quieres, puedo también:
+- agregar un `requirements.txt` con las dependencias fijas;
+- añadir instrucciones de publicación (PyPI) o CI para publicar releases;
+- automatizar la generación de `controller_config.json` en `examples/` para demos.
