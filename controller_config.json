@@ -1,0 +1,35 @@
+{
+  "name": "(Xbox 360\nController for\nWindows)",
+  "guid": "030008e1242f00006d01000000007200",
+  "buttons": {
+    "face_bottom": 0,
+    "face_right": 1,
+    "face_left": 2,
+    "face_top": 3,
+    "shoulder_left": 4,
+    "shoulder_right": 5,
+    "select": 6,
+    "start": 7,
+    "thumbl": 8,
+    "thumbr": 9
+  },
+  "axes": {
+    "left_stick_x": 0,
+    "left_stick_y": 1,
+    "right_stick_x": 2,
+    "right_stick_y": 3,
+    "trigger_left": 4,
+    "trigger_right": 5
+  },
+  "hats": {
+    "dpad": 0
+  },
+  "baseline": {
+    "0": 0.0,
+    "1": -3.0517578125e-05,
+    "2": 0.0,
+    "3": -3.0517578125e-05,
+    "4": -1.0,
+    "5": -1.0
+  }
+}

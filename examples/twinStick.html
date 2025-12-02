@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>Nexus Controller - Neon Vector Final</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #111; color: #eee; font-family: 'Courier New', monospace; }
+        canvas { display: block; }
+        #status { position: absolute; top: 10px; left: 10px; pointer-events: none; background: rgba(0,0,0,0.6); padding: 5px; font-weight: bold;}
+        .connected { color: #0f0; } .disconnected { color: #f00; }
+    </style>
+</head>
+<body>
+
+<div id="status">Estado: <span id="wsState" class="disconnected">Esperando Nexus...</span></div>
+<canvas id="gameCanvas"></canvas>
+
+<script>
+    // --- 1. CONEXIÓN NEXUS (Caja Negra) ---
+    const WS_URL = 'ws://localhost:8765'; 
+    let nexus = { lx: 0, ly: 0, rx: 0, ry: 0, start: false }; // Mínimo necesario
+    let socket;
+    const wsStateElem = document.getElementById('wsState');
+
+    function connect() {
+        socket = new WebSocket(WS_URL);
+        socket.onopen = () => { wsStateElem.textContent = "CONECTADO"; wsStateElem.className = "connected"; };
+        socket.onmessage = (e) => { try { nexus = JSON.parse(e.data); } catch(err){} };
+        socket.onclose = () => { 
+            wsStateElem.textContent = "DESCONECTADO"; wsStateElem.className = "disconnected"; 
+            setTimeout(connect, 2000); 
+        };
+    }
+    connect();
+
+    // --- 2. CONFIGURACIÓN JUEGO ---
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    let w, h;
+    
+    // Estado del Juego
+    let gameState = 'playing'; // 'playing', 'gameover'
+    let score = 0;
+    
+    // Entidades
+    let player = { x: 0, y: 0, vx: 0, vy: 0, radius: 15, angle: 0, dead: false };
+    let bullets = [];
+    let enemies = [];
+    let particles = [];
+    let lastShot = 0;
+
+    function resize() { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; resetGame(); }
+    window.addEventListener('resize', resize);
+
+    function resetGame() {
+        player.x = w/2; player.y = h/2; player.vx = 0; player.vy = 0; player.dead = false;
+        bullets = []; enemies = []; particles = [];
+        score = 0;
+        gameState = 'playing';
+    }
+
+    // --- 3. CLASES ---
+    class Bullet {
+        constructor(x, y, a) { this.x = x; this.y = y; this.vx = Math.cos(a)*12; this.vy = Math.sin(a)*12; this.life=80; }
+        update() { this.x+=this.vx; this.y+=this.vy; this.life--; }
+        draw() { ctx.fillStyle='#ff0'; ctx.beginPath(); ctx.arc(this.x, this.y, 3, 0, 7); ctx.fill(); }
+    }
+
+    class Enemy {
+        constructor() {
+            const side = Math.random() < 0.5;
+            this.x = side ? (Math.random()<0.5 ? 0 : w) : Math.random()*w;
+            this.y = !side ? (Math.random()<0.5 ? 0 : h) : Math.random()*h;
+            this.s = 1.5 + Math.random()*2 + (score/1000); // Dificultad progresiva
+            this.r = 12; this.dead = false;
+        }
+        update() {
+            const a = Math.atan2(player.y - this.y, player.x - this.x);
+            this.x += Math.cos(a)*this.s; this.y += Math.sin(a)*this.s;
+        }
+        draw() { 
+            ctx.strokeStyle='#f05'; ctx.lineWidth=2; ctx.shadowBlur=10; ctx.shadowColor='#f05';
+            ctx.strokeRect(this.x-this.r, this.y-this.r, this.r*2, this.r*2); ctx.shadowBlur=0;
+        }
+    }
+
+    class Particle {
+        constructor(x, y, c) { this.x=x; this.y=y; this.vx=(Math.random()-0.5)*6; this.vy=(Math.random()-0.5)*6; this.life=40; this.c=c; }
+        update() { this.x+=this.vx; this.y+=this.vy; this.life--; }
+        draw() { ctx.fillStyle=this.c; ctx.globalAlpha=this.life/40; ctx.fillRect(this.x, this.y, 3, 3); ctx.globalAlpha=1; }
+    }
+
+    function explode(x, y, c, count=10) { for(let i=0; i<count; i++) particles.push(new Particle(x, y, c)); }
+
+    // --- 4. BUCLE PRINCIPAL ---
+    function loop(t) {
+        requestAnimationFrame(loop);
+
+        // Fondo con barrido suave
+        ctx.fillStyle = 'rgba(17, 17, 17, 0.3)';
+        ctx.fillRect(0, 0, w, h);
+
+        if (gameState === 'playing') {
+            // INPUT
+            if (!player.dead) {
+                // Movimiento
+                if (Math.abs(nexus.lx) > 0.1) player.vx += nexus.lx * 0.8;
+                if (Math.abs(nexus.ly) > 0.1) player.vy += nexus.ly * 0.8;
+                player.vx *= 0.92; player.vy *= 0.92;
+                player.x = Math.max(15, Math.min(w-15, player.x + player.vx));
+                player.y = Math.max(15, Math.min(h-15, player.y + player.vy));
+
+                // Disparo
+                if (Math.hypot(nexus.rx, nexus.ry) > 0.3) {
+                    player.angle = Math.atan2(nexus.ry, nexus.rx);
+                    if (t - lastShot > 100) {
+                        bullets.push(new Bullet(player.x, player.y, player.angle));
+                        lastShot = t;
+                    }
+                }
+            }
+
+            // LÓGICA
+            if (Math.random() < 0.015 + (score/10000)) enemies.push(new Enemy()); // Spawn rate aumenta
+
+            bullets.forEach(b => b.update());
+            enemies.forEach(e => e.update());
+            particles.forEach(p => p.update());
+
+            // Colisiones Bala vs Enemigo
+            bullets = bullets.filter(b => {
+                let hit = false;
+                enemies.forEach(e => {
+                    if (!hit && !e.dead && Math.hypot(b.x-e.x, b.y-e.y) < e.r+5) {
+                        e.dead = hit = true;
+                        explode(e.x, e.y, '#f05');
+                        score += 100;
+                    }
+                });
+                return !hit && b.life > 0;
+            });
+
+            // Colisión Jugador vs Enemigo
+            enemies.forEach(e => {
+                if (!player.dead && !e.dead && Math.hypot(player.x-e.x, player.y-e.y) < player.radius + e.r) {
+                    player.dead = true;
+                    explode(player.x, player.y, '#0ff', 50);
+                    gameState = 'gameover';
+                }
+            });
+            enemies = enemies.filter(e => !e.dead);
+            particles = particles.filter(p => p.life > 0);
+
+            // DIBUJO
+            if (!player.dead) {
+                ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
+                ctx.strokeStyle = '#0ff'; ctx.lineWidth = 2; ctx.shadowColor='#0ff'; ctx.shadowBlur=15;
+                ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-10, -10); ctx.lineTo(-5, 0); ctx.lineTo(-10, 10); ctx.closePath(); ctx.stroke();
+                ctx.restore();
+            }
+
+            // HUD
+            ctx.font = "20px Courier New"; ctx.fillStyle = "#fff"; ctx.fillText("SCORE: " + score, 20, 40);
+
+        } else if (gameState === 'gameover') {
+            // Seguir renderizando partículas y enemigos (congelados o moviéndose lento) para efecto dramático
+            particles.forEach(p => { p.update(); p.draw(); });
+            enemies.forEach(e => e.draw()); // Enemigos estáticos de fondo
+
+            // UI Game Over
+            ctx.textAlign = "center";
+            ctx.shadowBlur = 0;
+            
+            ctx.font = "bold 60px Courier New";
+            ctx.fillStyle = "#f05";
+            ctx.fillText("GAME OVER", w/2, h/2 - 20);
+            
+            ctx.font = "30px Courier New";
+            ctx.fillStyle = "#fff";
+            ctx.fillText("SCORE FINAL: " + score, w/2, h/2 + 40);
+            
+            ctx.font = "20px Courier New";
+            ctx.fillStyle = "#aaa";
+            if (Math.floor(t / 500) % 2 === 0) { // Parpadeo
+                ctx.fillText("PRESS START TO RETRY", w/2, h/2 + 90);
+            }
+
+            // RESTART LOGIC
+            if (nexus.start) {
+                resetGame();
+            }
+        }
+
+        // Renderizado común
+        bullets.forEach(b => b.draw());
+        enemies.forEach(e => e.draw());
+        particles.forEach(p => p.draw());
+    }
+    
+    // Iniciar
+    resize();
+    requestAnimationFrame(loop);
+
+    // Soporte teclado para debug (Enter = Start)
+    window.addEventListener('keydown', e => { if(e.key==='Enter') nexus.start=true; });
+    window.addEventListener('keyup', e => { if(e.key==='Enter') nexus.start=false; });
+
+</script>
+</body>
+</html>
