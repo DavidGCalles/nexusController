@@ -1,91 +1,47 @@
-***
-# 🎮 ControlNexus — Gamepad Abstraction & Packaging
+# 🦀 NexusController (Rust Core Rewrite) — WIP
 
-ControlNexus normaliza entradas de gamepads y proporciona herramientas para mapear, depurar y exponer los datos por WebSocket o en un paquete instalable de Python. El repositorio incluye los mappers interactivos y demos en `examples/`.
+> **⚠️ WARNING: ARCHITECTURAL OVERHAUL IN PROGRESS**
+> This branch is currently a construction zone. The Python implementation (`pygame` + `asyncio`) is being replaced by a high-performance system daemon written in **Rust**.
+> If you are looking for the working legacy version, check the history or the `legacy-python` tag.
 
-Este README fue actualizado para reflejar la nueva estructura del repositorio y el flujo de instalación/ejecución como paquete.
+## 🎯 Mission
+**NexusController** is a hardware-agnostic input daemon designed to abstract complex controller ecosystems into a standardized, low-latency WebSocket stream.
 
-## 🧭 Resumen de la nueva estructura
-- Código empaquetado: `src/nexuscontroller/`
-  - `src/nexuscontroller/core.py` — implementación principal (`InputSource`).
-  - `src/nexuscontroller/server.py` — servidor WebSocket con función `run()`.
-  - `src/nexuscontroller/default_config.json` — configuración por defecto incluida en el paquete.
-  - `src/nexuscontroller/mappers/` — versiones de los mappers con `run()` en cada módulo.
-- Ejemplos y herramientas de depuración se mantienen en la raíz: `examples/`, `debug/`.
+This rewrite moves from a prototype script to a robust system component, prioritizing:
+* **Deterministic Latency:** Zero GC pauses.
+* **Type Safety:** Strict compilation guarantees for the input pipeline.
+* **Concurrency:** "Fearless concurrency" for separating high-frequency polling from network broadcasting.
+* **Multi-Device:** Native support for N concurrent input devices.
 
-## ✅ Requisitos
-- Python 3.10+ (probado con 3.12)
+## 🏗️ Architecture Stack
+* **Language:** Rust (2021 Edition)
+* **Input Layer:** `gilrs` (Cross-platform, headless, event-based).
+* **Async Runtime:** `tokio` (Industry standard for async I/O).
+* **Network:** `tokio-tungstenite` (WebSocket).
+* **Serialization:** `serde` (Strict JSON) & custom bit-packing for binary fast-paths.
 
-Dependencias (se instalarán desde `pyproject.toml` si instalas el paquete):
-- `pygame`
-- `websockets`
-- `pyserial` (opcional, para conectividad serial)
+## 🛣️ Roadmap & Status (ADR-001 / ADR-002)
+We are currently executing the migration plan defined in `ADR-001`.
 
-## Instalación (editable — recomendado para desarrollo)
-En PowerShell, desde la raíz del repositorio:
-```powershell
-python -m pip install --upgrade pip
-python -m pip install -e .
-```
+- [ ] **Phase 1: Plumbing (The Core)**
+    - [ ] `nexus-core`: Raw event loop with `gilrs`.
+    - [ ] `nexus-server`: Async WebSocket infrastructure.
+    - [ ] Binary Protocol port (`<Hhhhhhh` format).
+- [ ] **Phase 2: The Brain (Orchestration)**
+    - [ ] Multi-Controller Registry (Dynamic hot-plugging).
+    - [ ] Stream Routing (Legacy vs Multi-stream channels).
+- [ ] **Phase 3: Configuration (The Driver)**
+    - [ ] Data-Driven Mapping (Runtime lookup tables).
+    - [ ] `nexus-map` CLI: Interactive TUI for controller calibration.
 
-Esto instala el paquete en modo editable y crea los entry points CLI descritos abajo.
+## 🛠️ Development Setup
+Requirements:
+* Rust (`rustc`, `cargo`) - latest stable.
 
-Alternativa (sin instalar): exporta `src` en `PYTHONPATH` y usa los shims:
-```powershell
-$env:PYTHONPATH = "src"
-python main.py    # shim que invoca nexuscontroller.server.run()
-```
+### Build & Run
+```bash
+# Initialize project (First time only)
+# cargo new nexuscontroller
 
-## Uso — comandos disponibles
-- Ejecutar el servidor WebSocket (recomendado tras `pip install -e .`):
-```powershell
-nexus-server
-```
-o alternativamente:
-```powershell
-python -m nexuscontroller.server
-```
-
-- Ejecutar el mapper científico (entry point):
-```powershell
-nexus-map
-```
-o alternativamente:
-```powershell
-python -m nexuscontroller.mappers.scientific_mapper
-```
-
-Si no se instaló el paquete, agrega `src` a `PYTHONPATH` (ver arriba) para que `python main.py` funcione como antes.
-
-## Flujo rápido para usar el sistema
-1. Instala editable: `python -m pip install -e .`.
-2. Si necesitas generar/actualizar un mapeo de controlador:
-   - `nexus-map` (o `python -m nexuscontroller.mappers.scientific_mapper`).
-   - Esto generará un `controller_config.json` en el directorio de ejecución.
-3. Ejecuta el servidor de entrada:
-   - `nexus-server` (o `python -m nexuscontroller.server`).
-4. Abre un cliente (por ejemplo `examples/cybermaze/cyberMaze.html`) que se conecte a `ws://localhost:8765`.
-
-## Notas importantes
-- El paquete incluye `default_config.json` usado como fallback cuando no se pasa un `config_path` a `InputSource`.
-- Las entradas de los mappers quedan en `src/nexuscontroller/mappers/` y exponen `run()` para ser usadas como entry points.
-- Los shims en la raíz (`main.py`, `mappers/*.py`) siguen presentes para compatibilidad local, pero la forma recomendada es instalar el paquete editable y usar los entry points.
-
-## Formatos de salida (resumen)
-- JSON via WebSocket: ejes normalizados en `[-1.0, 1.0]`, botones `0/1`. (función: `InputSource.to_json`).
-- Binario: `InputSource.to_bytes(data)` usa formato `'<Hhhhhhh'` para empaquetado compacto.
-
-## Examples & Demo
-- `examples/cybermaze/` — demo Canvas que puede consumir el WebSocket del servidor.
-
-## Troubleshooting rápido
-- Si `nexus-server` no se encuentra, asegúrate de haber corrido `python -m pip install -e .`.
-- Para ejecutar sin instalar, exporta `src` en `PYTHONPATH` y usa los shims (`python main.py`).
-- Si el mando no se detecta: cierra Steam/otros remapeadores, conecta el mando y vuelve a ejecutar el mapper.
-
----
-
-Si quieres, puedo también:
-- agregar un `requirements.txt` con las dependencias fijas;
-- añadir instrucciones de publicación (PyPI) o CI para publicar releases;
-- automatizar la generación de `controller_config.json` en `examples/` para demos.
+# Run the daemon (Debug mode)
+cargo run
