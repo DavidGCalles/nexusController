@@ -1,298 +1,302 @@
 <!DOCTYPE html>
-<html lang="es">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>ControlNexus Debugger v2</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Multi-Protocol Viewer</title>
     <style>
-        body { 
-            font-family: 'Courier New', monospace; 
-            background: #121212; 
-            color: #0f0; 
-            display: flex; 
-            flex-direction: column; 
-            align-items: center; 
-            justify-content: center; 
-            height: 100vh; 
-            margin: 0; 
-            user-select: none;
+        :root {
+            --bg-color: #0d0d0d;
+            --card-bg: #1a1a1a;
+            --text-main: #e0e0e0;
+            --accent: #00ff9d;
+            --accent-dim: #004d30;
+            --disconnected: #ff4444;
         }
 
-        /* --- LAYOUT GENERAL --- */
-        .dashboard { 
-            display: grid; 
-            grid-template-columns: 1fr 0.8fr 1fr; 
-            gap: 20px; 
-            background: #1e1e1e; 
-            padding: 30px; 
-            border: 2px solid #333; 
-            border-radius: 15px; 
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        body {
+            font-family: 'Segoe UI', Consolas, monospace;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
         }
 
-        .column { display: flex; flex-direction: column; align-items: center; gap: 15px; }
-
-        /* --- STICKS --- */
-        .stick-wrapper { position: relative; }
-        .stick-container { 
-            position: relative; 
-            width: 160px; height: 160px; 
-            background: #000; 
-            border: 2px solid #444; 
-            border-radius: 50%; 
-            transition: border-color 0.1s;
-        }
-        .stick-container.pressed { border-color: #fff; box-shadow: 0 0 10px #fff; } /* L3/R3 Effect */
+        h1 { margin-bottom: 10px; text-transform: uppercase; letter-spacing: 2px; border-bottom: 2px solid var(--accent); }
+        .status-bar { font-size: 0.9em; color: #888; margin-bottom: 30px; font-family: monospace; }
         
-        .stick-dot { 
-            position: absolute; 
-            width: 20px; height: 20px; 
-            background: #0f0; 
-            border-radius: 50%; 
-            top: 70px; left: 70px; /* Centrado (160/2 - 20/2) */
-            box-shadow: 0 0 8px #0f0;
-        }
-        .label { color: #555; font-size: 12px; margin-top: 5px; }
-
-        /* --- TRIGGERS & BUMPERS --- */
-        .shoulder-group { width: 100%; display: flex; flex-direction: column; gap: 5px; }
-        .bumper { 
-            background: #222; border: 1px solid #444; 
-            padding: 8px; text-align: center; border-radius: 4px; color: #555; font-weight: bold;
-        }
-        .bumper.active { background: #0f0; color: #000; box-shadow: 0 0 10px #0f0; }
-
-        .trigger-container { 
-            height: 120px; background: #000; 
-            position: relative; border: 1px solid #333; border-radius: 4px; overflow: hidden;
-        }
-        .trigger-fill { 
-            position: absolute; bottom: 0; left: 0; width: 100%; 
-            background: linear-gradient(to top, #0f0, #0a0); 
-            height: 0%; opacity: 0.8; transition: height 0.05s linear;
+        /* GRID LAYOUT */
+        #controllers-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            width: 100%;
+            max-width: 1400px;
         }
 
-        /* --- CENTER COLUMN (D-Pad, Start, Select) --- */
-        .center-col { justify-content: space-between; padding-top: 20px; }
-        
-        /* D-PAD GRID */
-        .dpad-grid { 
-            display: grid; 
-            grid-template-columns: 30px 30px 30px; 
-            grid-template-rows: 30px 30px 30px; 
-            gap: 2px; 
+        /* CONTROLLER CARD */
+        .controller-card {
+            background: var(--card-bg);
+            border: 1px solid #333;
+            border-radius: 12px;
+            width: 320px;
+            padding: 20px;
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            transition: all 0.2s ease;
         }
-        .dpad-btn { background: #222; border: 1px solid #444; }
-        .dpad-btn.active { background: #0f0; box-shadow: 0 0 10px #0f0; }
-        .d-up { grid-column: 2; grid-row: 1; border-radius: 4px 4px 0 0; }
-        .d-left { grid-column: 1; grid-row: 2; border-radius: 4px 0 0 4px; }
-        .d-right { grid-column: 3; grid-row: 2; border-radius: 0 4px 4px 0; }
-        .d-down { grid-column: 2; grid-row: 3; border-radius: 0 0 4px 4px; }
-        .d-center { grid-column: 2; grid-row: 2; background: #111; }
 
-        /* START / SELECT */
-        .menu-btns { display: flex; gap: 10px; margin-top: 20px; }
-        .capsule-btn { 
-            width: 40px; height: 15px; 
-            background: #222; border: 1px solid #444; 
-            border-radius: 10px; 
-        }
-        .capsule-btn.active { background: #0f0; box-shadow: 0 0 8px #0f0; }
-
-        /* --- FACE BUTTONS (Diamond Layout) --- */
-        .face-grid { 
-            display: grid; 
-            grid-template-columns: 40px 40px 40px; 
-            grid-template-rows: 40px 40px 40px; 
-            gap: 5px; margin-top: 20px;
-        }
-        .round-btn { 
-            width: 40px; height: 40px; 
-            border-radius: 50%; border: 2px solid #444; 
+        .controller-card.active { border-color: var(--accent); box-shadow: 0 0 15px var(--accent-dim); }
+        .controller-card.offline { border-color: var(--disconnected); opacity: 0.7; }
+        .controller-card.offline::after {
+            content: "DISCONNECTED";
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
             display: flex; align-items: center; justify-content: center;
-            color: #555; font-weight: bold; font-size: 18px;
-            background: #1a1a1a;
+            font-weight: bold; font-size: 1.5em; color: var(--disconnected);
+            backdrop-filter: blur(2px);
+            border-radius: 12px;
         }
-        .round-btn.active { 
-            background: #0f0; color: #000; box-shadow: 0 0 15px #0f0; border-color: #0f0;
-        }
-        
-        /* Posiciones XBOX / Estándar */
-        .btn-y { grid-column: 2; grid-row: 1; }
-        .btn-x { grid-column: 1; grid-row: 2; }
-        .btn-b { grid-column: 3; grid-row: 2; }
-        .btn-a { grid-column: 2; grid-row: 3; }
 
-        /* --- HEADER --- */
-        .header { text-align: center; margin-bottom: 20px; width: 100%; border-bottom: 1px solid #333; padding-bottom: 10px; }
-        .status { font-weight: bold; color: #ff3333; }
-        .status.connected { color: #0f0; }
-        .guid { font-size: 10px; color: #666; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .c-id { background: #333; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8em; }
+        .c-name { font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; color: #aaa; }
+
+        /* INPUT VISUALIZERS */
+        .row { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 15px; }
+        
+        /* Sticks */
+        .stick-wrapper { display: flex; flex-direction: column; align-items: center; }
+        .stick-area {
+            width: 100px; height: 100px;
+            background: #000;
+            border: 2px solid #444;
+            border-radius: 50%;
+            position: relative;
+        }
+        .stick-dot {
+            width: 12px; height: 12px;
+            background: var(--accent);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 8px var(--accent);
+        }
+        .stick-btn-active { background: #fff !important; box-shadow: 0 0 10px #fff; }
+
+        /* Triggers */
+        .trigger-group { width: 45%; }
+        .trigger-bar-bg { width: 100%; height: 10px; background: #333; border-radius: 5px; overflow: hidden; margin-top: 5px; }
+        .trigger-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), #fff); }
+
+        /* Buttons Grid */
+        .btn-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+        .dpad-grid { display: grid; grid-template-columns: repeat(3, 20px); gap: 2px; }
+        
+        .btn {
+            width: 30px; height: 30px;
+            border: 2px solid #444; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 0.8em; color: #555;
+            background: #111;
+        }
+        .btn.rect { border-radius: 6px; width: 40px; height: 20px; font-size: 0.7em; }
+        .btn.dpad { border-radius: 4px; width: 20px; height: 20px; border: none; background: #222; }
+
+        .btn.pressed {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+            box-shadow: 0 0 10px var(--accent-dim);
+        }
+
+        /* GUID Debug */
+        .guid-text { font-size: 0.7em; color: #444; text-align: center; margin-top: 10px; font-family: monospace; }
 
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <div>STATUS: <span id="status" class="status">DESCONECTADO</span></div>
-        <div id="device-name">Esperando datos...</div>
-        <div id="device-guid" class="guid"></div>
-    </div>
+    <h1>Nexus Control Center</h1>
+    <div class="status-bar">WebSocket Status: <span id="ws-status" style="color: #ff4444">DISCONNECTED</span></div>
 
-    <div class="dashboard">
-        
-        <div class="column">
-            <div class="shoulder-group">
-                <div id="btn-lb" class="bumper">LB</div>
-                <div class="trigger-container"><div id="trig-l" class="trigger-fill"></div></div>
-            </div>
-            
-            <div class="stick-wrapper">
-                <div id="stick-l-container" class="stick-container">
-                    <div id="stick-l" class="stick-dot"></div>
-                </div>
-                <div class="label">L-STICK (L3)</div>
-            </div>
+    <div id="controllers-container">
         </div>
-
-        <div class="column center-col">
-            <div>
-                <div class="label" style="text-align:center; margin-bottom:5px;">DPAD</div>
-                <div class="dpad-grid">
-                    <div id="d-up" class="dpad-btn d-up"></div>
-                    <div id="d-left" class="dpad-btn d-left"></div>
-                    <div class="dpad-btn d-center"></div>
-                    <div id="d-right" class="dpad-btn d-right"></div>
-                    <div id="d-down" class="dpad-btn d-down"></div>
-                </div>
-            </div>
-
-            <div class="menu-btns">
-                <div>
-                    <div id="btn-back" class="capsule-btn"></div>
-                    <div class="label" style="text-align:center">BACK</div>
-                </div>
-                <div>
-                    <div id="btn-start" class="capsule-btn"></div>
-                    <div class="label" style="text-align:center">START</div>
-                </div>
-            </div>
-        </div>
-
-        <div class="column">
-            <div class="shoulder-group">
-                <div id="btn-rb" class="bumper">RB</div>
-                <div class="trigger-container"><div id="trig-r" class="trigger-fill"></div></div>
-            </div>
-
-            <div class="stick-wrapper">
-                <div id="stick-r-container" class="stick-container">
-                    <div id="stick-r" class="stick-dot"></div>
-                </div>
-                <div class="label">R-STICK (R3)</div>
-            </div>
-
-            <div class="face-grid">
-                <div id="btn-y" class="round-btn btn-y">Y</div>
-                <div id="btn-x" class="round-btn btn-x">X</div>
-                <div id="btn-b" class="round-btn btn-b">B</div>
-                <div id="btn-a" class="round-btn btn-a">A</div>
-            </div>
-        </div>
-
-    </div>
 
     <script>
-        const ws = new WebSocket("ws://localhost:8765");
-        const statusEl = document.getElementById('status');
-        const nameEl = document.getElementById('device-name');
-        const guidEl = document.getElementById('device-guid');
+        const container = document.getElementById('controllers-container');
+        const wsStatus = document.getElementById('ws-status');
+        const controllers = {}; // Mapa ID -> Elemento DOM
 
-        ws.onopen = () => {
-            statusEl.innerText = "CONECTADO";
-            statusEl.classList.add("connected");
-        };
+        function connect() {
+            const ws = new WebSocket("ws://localhost:8765");
 
-        ws.onclose = () => {
-            statusEl.innerText = "DESCONECTADO";
-            statusEl.classList.remove("connected");
-        };
+            ws.onopen = () => {
+                wsStatus.innerText = "ONLINE";
+                wsStatus.style.color = "#00ff9d";
+                console.log("Nexus Connected");
+            };
 
-        ws.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            
-            // Handshake (Info del dispositivo)
-            if(data.name && data.connected !== undefined) {
-                nameEl.innerText = data.name;
-                guidEl.innerText = data.guid;
-                return;
+            ws.onclose = () => {
+                wsStatus.innerText = "OFFLINE (Retrying...)";
+                wsStatus.style.color = "#ff4444";
+                setTimeout(connect, 2000);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleData(data);
+                } catch (e) {
+                    console.error("Invalid JSON:", event.data);
+                }
+            };
+        }
+
+        function handleData(state) {
+            const cardId = `ctrl-${state.id}`;
+
+            // 1. Crear tarjeta si es nuevo
+            if (!controllers[cardId]) {
+                createCard(state);
             }
 
-            // Datos de control en tiempo real
-            updateUI(data);
-        };
+            const card = controllers[cardId];
+            
+            // 2. Gestionar estado Conectado/Desconectado
+            if (!state.connected) {
+                card.classList.add('offline');
+                return; // No actualizamos valores si está desconectado
+            } else {
+                card.classList.remove('offline');
+                // Efecto visual de "latido" al recibir datos
+                card.classList.add('active');
+                clearTimeout(card.blinkTimeout);
+                card.blinkTimeout = setTimeout(() => card.classList.remove('active'), 100);
+            }
 
-        function updateUI(data) {
-            // Sticks Analógicos
-            moveStick('stick-l', data.lx, data.ly);
-            moveStick('stick-r', data.rx, data.ry);
-
-            // Stick Clicks (L3/R3)
-            toggleL3R3('stick-l-container', data.l3);
-            toggleL3R3('stick-r-container', data.r3);
-
-            // Gatillos (Ahora 0.0 a 1.0 directo)
-            setTrigger('trig-l', data.lt);
-            setTrigger('trig-r', data.rt);
-
-            // Bumpers
-            toggle('btn-lb', data.lb);
-            toggle('btn-rb', data.rb);
+            // 3. Actualizar UI (Mapeo Protocolo -> DOM)
+            // Sticks
+            updateStick(card, 'L', state.axes.lx, state.axes.ly, state.buttons.l3);
+            updateStick(card, 'R', state.axes.rx, state.axes.ry, state.buttons.r3);
+            
+            // Triggers
+            updateTrigger(card, 'lt', state.axes.lt, state.buttons.lb);
+            updateTrigger(card, 'rt', state.axes.rt, state.buttons.rb);
 
             // Face Buttons
-            toggle('btn-a', data.a);
-            toggle('btn-b', data.b);
-            toggle('btn-x', data.x);
-            toggle('btn-y', data.y);
+            setBtn(card, 'a', state.buttons.south);
+            setBtn(card, 'b', state.buttons.east);
+            setBtn(card, 'x', state.buttons.west);
+            setBtn(card, 'y', state.buttons.north);
 
-            // Start / Select
-            toggle('btn-back', data.back);
-            toggle('btn-start', data.start);
+            // Menu
+            setBtn(card, 'start', state.buttons.start);
+            setBtn(card, 'select', state.buttons.select);
 
             // D-Pad
-            toggle('d-up', data.up);
-            toggle('d-down', data.down);
-            toggle('d-left', data.left);
-            toggle('d-right', data.right);
+            setBtn(card, 'dup', state.buttons.d_up);
+            setBtn(card, 'ddown', state.buttons.d_down);
+            setBtn(card, 'dleft', state.buttons.d_left);
+            setBtn(card, 'dright', state.buttons.d_right);
         }
 
-        function moveStick(id, x, y) {
-            const el = document.getElementById(id);
-            // El contenedor es 160px, radio 80px. El punto es 20px.
-            // Centro = 70px.
-            const range = 70; 
-            el.style.transform = `translate(${x * range}px, ${y * range}px)`;
+        function createCard(state) {
+            const el = document.createElement('div');
+            el.className = 'controller-card';
+            el.id = `ctrl-${state.id}`;
+            el.innerHTML = `
+                <div class="header">
+                    <span class="c-id">ID ${state.id}</span>
+                    <span class="c-name">${state.name}</span>
+                </div>
+                
+                <div class="row">
+                    <div class="trigger-group">
+                        <div style="display:flex; justify-content:space-between;">
+                            <span class="btn rect" id="btn-lb">LB</span>
+                            <small>LT</small>
+                        </div>
+                        <div class="trigger-bar-bg"><div class="trigger-fill" id="bar-lt"></div></div>
+                    </div>
+                    <div class="trigger-group">
+                        <div style="display:flex; justify-content:space-between;">
+                            <small>RT</small>
+                            <span class="btn rect" id="btn-rb">RB</span>
+                        </div>
+                        <div class="trigger-bar-bg"><div class="trigger-fill" id="bar-rt"></div></div>
+                    </div>
+                </div>
+
+                <div class="row" style="justify-content: space-around;">
+                    <div class="stick-wrapper">
+                        <div class="stick-area" id="stick-L"><div class="stick-dot"></div></div>
+                    </div>
+                    <div class="stick-wrapper">
+                        <div class="stick-area" id="stick-R"><div class="stick-dot"></div></div>
+                    </div>
+                </div>
+
+                <div class="row" style="margin-top: 20px;">
+                    <div class="dpad-grid">
+                        <div></div><div class="btn dpad" id="btn-dup"></div><div></div>
+                        <div class="btn dpad" id="btn-dleft"></div><div></div><div class="btn dpad" id="btn-dright"></div>
+                        <div></div><div class="btn dpad" id="btn-ddown"></div><div></div>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <div class="btn rect" id="btn-select">SEL</div>
+                        <div class="btn rect" id="btn-start">STA</div>
+                    </div>
+
+                    <div class="btn-grid" style="width: 100px;">
+                        <div></div><div class="btn" id="btn-y">Y</div><div></div>
+                        <div class="btn" id="btn-x">X</div><div></div><div class="btn" id="btn-b">B</div>
+                        <div></div><div class="btn" id="btn-a">A</div><div></div>
+                    </div>
+                </div>
+                <div class="guid-text">${state.guid}</div>
+            `;
+            container.appendChild(el);
+            controllers[el.id] = el;
         }
 
-        function toggleL3R3(id, state) {
-            const el = document.getElementById(id);
-            if(state) el.classList.add('pressed');
-            else el.classList.remove('pressed');
+        // --- UI HELPERS ---
+        function updateStick(card, side, x, y, click) {
+            const dot = card.querySelector(`#stick-${side} .stick-dot`);
+            // Invertir Y porque en pantalla Y crece hacia abajo, pero en mandos suele ser -1 arriba
+            // Gilrs: Arriba = 1.0 (a veces). Ajustamos visualmente: translate(x, -y)
+            const maxPx = 40; 
+            dot.style.transform = `translate(calc(-50% + ${x * maxPx}px), calc(-50% + ${-y * maxPx}px))`;
+            
+            if (click) dot.classList.add('stick-btn-active');
+            else dot.classList.remove('stick-btn-active');
         }
 
-        function setTrigger(id, val) {
-            const el = document.getElementById(id);
-            // VAL ahora viene limpio: 0.0 (vacío) a 1.0 (lleno)
-            let pct = val * 100;
-            // Clamp visual
-            if(pct < 0) pct = 0; if(pct > 100) pct = 100;
-            el.style.height = `${pct}%`;
+        function updateTrigger(card, side, val, bumper) {
+            const bar = card.querySelector(`#bar-${side}`);
+            // Clamp 0.0 - 1.0
+            const pct = Math.max(0, Math.min(1, val)) * 100;
+            bar.style.width = `${pct}%`;
+            
+            setBtn(card, side === 'lt' ? 'lb' : 'rb', bumper);
         }
 
-        function toggle(id, state) {
-            const el = document.getElementById(id);
-            if(state) el.classList.add('active');
-            else el.classList.remove('active');
+        function setBtn(card, name, pressed) {
+            const btn = card.querySelector(`#btn-${name}`);
+            if (btn) {
+                if (pressed) btn.classList.add('pressed');
+                else btn.classList.remove('pressed');
+            }
         }
+
+        connect();
     </script>
 </body>
 </html>
