@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nexus Multi-Protocol Viewer</title>
+    <style>
+        :root {
+            --bg-color: #0d0d0d;
+            --card-bg: #1a1a1a;
+            --text-main: #e0e0e0;
+            --accent: #00ff9d;
+            --accent-dim: #004d30;
+            --disconnected: #ff4444;
+        }
+
+        body {
+            font-family: 'Segoe UI', Consolas, monospace;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+        }
+
+        h1 { margin-bottom: 10px; text-transform: uppercase; letter-spacing: 2px; border-bottom: 2px solid var(--accent); }
+        .status-bar { font-size: 0.9em; color: #888; margin-bottom: 30px; font-family: monospace; }
+        
+        /* GRID LAYOUT */
+        #controllers-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            justify-content: center;
+            width: 100%;
+            max-width: 1400px;
+        }
+
+        /* CONTROLLER CARD */
+        .controller-card {
+            background: var(--card-bg);
+            border: 1px solid #333;
+            border-radius: 12px;
+            width: 320px;
+            padding: 20px;
+            position: relative;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            transition: all 0.2s ease;
+        }
+
+        .controller-card.active { border-color: var(--accent); box-shadow: 0 0 15px var(--accent-dim); }
+        .controller-card.offline { border-color: var(--disconnected); opacity: 0.7; }
+        .controller-card.offline::after {
+            content: "DISCONNECTED";
+            position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.7);
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 1.5em; color: var(--disconnected);
+            backdrop-filter: blur(2px);
+            border-radius: 12px;
+        }
+
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .c-id { background: #333; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8em; }
+        .c-name { font-size: 0.9em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; color: #aaa; }
+
+        /* INPUT VISUALIZERS */
+        .row { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 15px; }
+        
+        /* Sticks */
+        .stick-wrapper { display: flex; flex-direction: column; align-items: center; }
+        .stick-area {
+            width: 100px; height: 100px;
+            background: #000;
+            border: 2px solid #444;
+            border-radius: 50%;
+            position: relative;
+        }
+        .stick-dot {
+            width: 12px; height: 12px;
+            background: var(--accent);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 8px var(--accent);
+        }
+        .stick-btn-active { background: #fff !important; box-shadow: 0 0 10px #fff; }
+
+        /* Triggers */
+        .trigger-group { width: 45%; }
+        .trigger-bar-bg { width: 100%; height: 10px; background: #333; border-radius: 5px; overflow: hidden; margin-top: 5px; }
+        .trigger-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), #fff); }
+
+        /* Buttons Grid */
+        .btn-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; }
+        .dpad-grid { display: grid; grid-template-columns: repeat(3, 20px); gap: 2px; }
+        
+        .btn {
+            width: 30px; height: 30px;
+            border: 2px solid #444; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-weight: bold; font-size: 0.8em; color: #555;
+            background: #111;
+        }
+        .btn.rect { border-radius: 6px; width: 40px; height: 20px; font-size: 0.7em; }
+        .btn.dpad { border-radius: 4px; width: 20px; height: 20px; border: none; background: #222; }
+
+        .btn.pressed {
+            background: var(--accent);
+            color: #000;
+            border-color: var(--accent);
+            box-shadow: 0 0 10px var(--accent-dim);
+        }
+
+        /* GUID Debug */
+        .guid-text { font-size: 0.7em; color: #444; text-align: center; margin-top: 10px; font-family: monospace; }
+
+    </style>
+</head>
+<body>
+
+    <h1>Nexus Control Center</h1>
+    <div class="status-bar">WebSocket Status: <span id="ws-status" style="color: #ff4444">DISCONNECTED</span></div>
+
+    <div id="controllers-container">
+        </div>
+
+    <script>
+        const container = document.getElementById('controllers-container');
+        const wsStatus = document.getElementById('ws-status');
+        const controllers = {}; // Mapa ID -> Elemento DOM
+
+        function connect() {
+            const ws = new WebSocket("ws://localhost:8765");
+
+            ws.onopen = () => {
+                wsStatus.innerText = "ONLINE";
+                wsStatus.style.color = "#00ff9d";
+                console.log("Nexus Connected");
+            };
+
+            ws.onclose = () => {
+                wsStatus.innerText = "OFFLINE (Retrying...)";
+                wsStatus.style.color = "#ff4444";
+                setTimeout(connect, 2000);
+            };
+
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    handleData(data);
+                } catch (e) {
+                    console.error("Invalid JSON:", event.data);
+                }
+            };
+        }
+
+        function handleData(state) {
+            const cardId = `ctrl-${state.id}`;
+
+            // 1. Crear tarjeta si es nuevo
+            if (!controllers[cardId]) {
+                createCard(state);
+            }
+
+            const card = controllers[cardId];
+            
+            // 2. Gestionar estado Conectado/Desconectado
+            if (!state.connected) {
+                card.classList.add('offline');
+                return; // No actualizamos valores si está desconectado
+            } else {
+                card.classList.remove('offline');
+                // Efecto visual de "latido" al recibir datos
+                card.classList.add('active');
+                clearTimeout(card.blinkTimeout);
+                card.blinkTimeout = setTimeout(() => card.classList.remove('active'), 100);
+            }
+
+            // 3. Actualizar UI (Mapeo Protocolo -> DOM)
+            // Sticks
+            updateStick(card, 'L', state.axes.lx, state.axes.ly, state.buttons.l3);
+            updateStick(card, 'R', state.axes.rx, state.axes.ry, state.buttons.r3);
+            
+            // Triggers
+            updateTrigger(card, 'lt', state.axes.lt, state.buttons.lb);
+            updateTrigger(card, 'rt', state.axes.rt, state.buttons.rb);
+
+            // Face Buttons
+            setBtn(card, 'a', state.buttons.south);
+            setBtn(card, 'b', state.buttons.east);
+            setBtn(card, 'x', state.buttons.west);
+            setBtn(card, 'y', state.buttons.north);
+
+            // Menu
+            setBtn(card, 'start', state.buttons.start);
+            setBtn(card, 'select', state.buttons.select);
+
+            // D-Pad
+            setBtn(card, 'dup', state.buttons.d_up);
+            setBtn(card, 'ddown', state.buttons.d_down);
+            setBtn(card, 'dleft', state.buttons.d_left);
+            setBtn(card, 'dright', state.buttons.d_right);
+        }
+
+        function createCard(state) {
+            const el = document.createElement('div');
+            el.className = 'controller-card';
+            el.id = `ctrl-${state.id}`;
+            el.innerHTML = `
+                <div class="header">
+                    <span class="c-id">ID ${state.id}</span>
+                    <span class="c-name">${state.name}</span>
+                </div>
+                
+                <div class="row">
+                    <div class="trigger-group">
+                        <div style="display:flex; justify-content:space-between;">
+                            <span class="btn rect" id="btn-lb">LB</span>
+                            <small>LT</small>
+                        </div>
+                        <div class="trigger-bar-bg"><div class="trigger-fill" id="bar-lt"></div></div>
+                    </div>
+                    <div class="trigger-group">
+                        <div style="display:flex; justify-content:space-between;">
+                            <small>RT</small>
+                            <span class="btn rect" id="btn-rb">RB</span>
+                        </div>
+                        <div class="trigger-bar-bg"><div class="trigger-fill" id="bar-rt"></div></div>
+                    </div>
+                </div>
+
+                <div class="row" style="justify-content: space-around;">
+                    <div class="stick-wrapper">
+                        <div class="stick-area" id="stick-L"><div class="stick-dot"></div></div>
+                    </div>
+                    <div class="stick-wrapper">
+                        <div class="stick-area" id="stick-R"><div class="stick-dot"></div></div>
+                    </div>
+                </div>
+
+                <div class="row" style="margin-top: 20px;">
+                    <div class="dpad-grid">
+                        <div></div><div class="btn dpad" id="btn-dup"></div><div></div>
+                        <div class="btn dpad" id="btn-dleft"></div><div></div><div class="btn dpad" id="btn-dright"></div>
+                        <div></div><div class="btn dpad" id="btn-ddown"></div><div></div>
+                    </div>
+
+                    <div style="display: flex; gap: 10px; align-items: center;">
+                        <div class="btn rect" id="btn-select">SEL</div>
+                        <div class="btn rect" id="btn-start">STA</div>
+                    </div>
+
+                    <div class="btn-grid" style="width: 100px;">
+                        <div></div><div class="btn" id="btn-y">Y</div><div></div>
+                        <div class="btn" id="btn-x">X</div><div></div><div class="btn" id="btn-b">B</div>
+                        <div></div><div class="btn" id="btn-a">A</div><div></div>
+                    </div>
+                </div>
+                <div class="guid-text">${state.guid}</div>
+            `;
+            container.appendChild(el);
+            controllers[el.id] = el;
+        }
+
+        // --- UI HELPERS ---
+        function updateStick(card, side, x, y, click) {
+            const dot = card.querySelector(`#stick-${side} .stick-dot`);
+            // Invertir Y porque en pantalla Y crece hacia abajo, pero en mandos suele ser -1 arriba
+            // Gilrs: Arriba = 1.0 (a veces). Ajustamos visualmente: translate(x, -y)
+            const maxPx = 40; 
+            dot.style.transform = `translate(calc(-50% + ${x * maxPx}px), calc(-50% + ${-y * maxPx}px))`;
+            
+            if (click) dot.classList.add('stick-btn-active');
+            else dot.classList.remove('stick-btn-active');
+        }
+
+        function updateTrigger(card, side, val, bumper) {
+            const bar = card.querySelector(`#bar-${side}`);
+            // Clamp 0.0 - 1.0
+            const pct = Math.max(0, Math.min(1, val)) * 100;
+            bar.style.width = `${pct}%`;
+            
+            setBtn(card, side === 'lt' ? 'lb' : 'rb', bumper);
+        }
+
+        function setBtn(card, name, pressed) {
+            const btn = card.querySelector(`#btn-${name}`);
+            if (btn) {
+                if (pressed) btn.classList.add('pressed');
+                else btn.classList.remove('pressed');
+            }
+        }
+
+        connect();
+    </script>
+</body>
+</html>
