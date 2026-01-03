@@ -2,32 +2,61 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Nexus Controller - Neon Vector Final</title>
+    <title>Nexus Controller - Neon Vector Multi</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #111; color: #eee; font-family: 'Courier New', monospace; }
         canvas { display: block; }
-        #status { position: absolute; top: 10px; left: 10px; pointer-events: none; background: rgba(0,0,0,0.6); padding: 5px; font-weight: bold;}
+        #status { position: absolute; top: 10px; left: 10px; pointer-events: none; background: rgba(0,0,0,0.6); padding: 5px; font-weight: bold; z-index: 10;}
         .connected { color: #0f0; } .disconnected { color: #f00; }
+        #join-msg {
+            position: absolute; bottom: 20px; width: 100%; text-align: center;
+            font-size: 14px; color: #666; animation: blink 1s infinite; pointer-events: none;
+        }
+        @keyframes blink { 50% { opacity: 0.5; } }
     </style>
 </head>
 <body>
 
-<div id="status">Estado: <span id="wsState" class="disconnected">Esperando Nexus...</span></div>
+<div id="status">Backend: <span id="wsState" class="disconnected">Esperando...</span></div>
+<div id="join-msg">PRESS [START] TO JOIN</div>
 <canvas id="gameCanvas"></canvas>
 
 <script>
-    // --- 1. CONEXIÓN NEXUS (Caja Negra) ---
+    // --- 1. CONEXIÓN NEXUS (Protocolo v2: Multi-Device) ---
     const WS_URL = 'ws://localhost:8765'; 
-    let nexus = { lx: 0, ly: 0, rx: 0, ry: 0, start: false }; // Mínimo necesario
-    let socket;
+    
+    // Almacén de inputs crudos: ID -> ControllerState
+    const inputs = new Map();
+    // Jugadores activos: ID -> Objeto Player
+    const players = new Map();
+
     const wsStateElem = document.getElementById('wsState');
 
     function connect() {
-        socket = new WebSocket(WS_URL);
-        socket.onopen = () => { wsStateElem.textContent = "CONECTADO"; wsStateElem.className = "connected"; };
-        socket.onmessage = (e) => { try { nexus = JSON.parse(e.data); } catch(err){} };
+        const socket = new WebSocket(WS_URL);
+        
+        socket.onopen = () => { 
+            wsStateElem.textContent = "ONLINE"; 
+            wsStateElem.className = "connected"; 
+        };
+        
+        socket.onmessage = (e) => { 
+            try { 
+                const data = JSON.parse(e.data);
+                if (data.id !== undefined) {
+                    inputs.set(data.id, data);
+                    
+                    // Lógica de "Join in Progress"
+                    if (data.buttons.start && !players.has(data.id)) {
+                        spawnPlayer(data.id);
+                    }
+                }
+            } catch(err){} 
+        };
+        
         socket.onclose = () => { 
-            wsStateElem.textContent = "DESCONECTADO"; wsStateElem.className = "disconnected"; 
+            wsStateElem.textContent = "OFFLINE"; 
+            wsStateElem.className = "disconnected"; 
             setTimeout(connect, 2000); 
         };
     }
@@ -38,32 +67,65 @@
     const ctx = canvas.getContext('2d');
     let w, h;
     
-    // Estado del Juego
-    let gameState = 'playing'; // 'playing', 'gameover'
+    // Paleta de colores para jugadores
+    const PLAYER_COLORS = ['#0ff', '#f0f', '#ff0', '#0f0'];
+
+    let gameState = 'waiting'; // 'waiting', 'playing', 'gameover'
     let score = 0;
     
-    // Entidades
-    let player = { x: 0, y: 0, vx: 0, vy: 0, radius: 15, angle: 0, dead: false };
     let bullets = [];
     let enemies = [];
     let particles = [];
-    let lastShot = 0;
-
-    function resize() { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; resetGame(); }
+    
+    function resize() { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; }
     window.addEventListener('resize', resize);
 
+    function spawnPlayer(id) {
+        const color = PLAYER_COLORS[id % PLAYER_COLORS.length];
+        players.set(id, {
+            id: id,
+            x: w/2 + (Math.random()-0.5)*100, 
+            y: h/2 + (Math.random()-0.5)*100, 
+            vx: 0, vy: 0, 
+            radius: 15, 
+            angle: 0, 
+            dead: false,
+            color: color,
+            lastShot: 0
+        });
+        explode(players.get(id).x, players.get(id).y, color, 20);
+        
+        if (gameState === 'waiting' || gameState === 'gameover') {
+            if (gameState === 'gameover') resetGame();
+            gameState = 'playing';
+            score = 0;
+        }
+    }
+
     function resetGame() {
-        player.x = w/2; player.y = h/2; player.vx = 0; player.vy = 0; player.dead = false;
         bullets = []; enemies = []; particles = [];
         score = 0;
+        players.forEach(p => {
+            p.dead = false;
+            p.x = w/2; p.y = h/2; p.vx=0; p.vy=0;
+        });
         gameState = 'playing';
     }
 
     // --- 3. CLASES ---
     class Bullet {
-        constructor(x, y, a) { this.x = x; this.y = y; this.vx = Math.cos(a)*12; this.vy = Math.sin(a)*12; this.life=80; }
+        constructor(x, y, a, ownerColor) { 
+            this.x = x; this.y = y; 
+            this.vx = Math.cos(a)*12; this.vy = Math.sin(a)*12; 
+            this.life=80; this.color = ownerColor;
+        }
         update() { this.x+=this.vx; this.y+=this.vy; this.life--; }
-        draw() { ctx.fillStyle='#ff0'; ctx.beginPath(); ctx.arc(this.x, this.y, 3, 0, 7); ctx.fill(); }
+        draw() { 
+            ctx.fillStyle = this.color; 
+            ctx.shadowBlur = 5; ctx.shadowColor = this.color;
+            ctx.beginPath(); ctx.arc(this.x, this.y, 3, 0, Math.PI*2); ctx.fill();
+            ctx.shadowBlur = 0;
+        }
     }
 
     class Enemy {
@@ -71,16 +133,32 @@
             const side = Math.random() < 0.5;
             this.x = side ? (Math.random()<0.5 ? 0 : w) : Math.random()*w;
             this.y = !side ? (Math.random()<0.5 ? 0 : h) : Math.random()*h;
-            this.s = 1.5 + Math.random()*2 + (score/1000); // Dificultad progresiva
+            this.s = 1.5 + Math.random()*2 + (score/2000); 
             this.r = 12; this.dead = false;
         }
         update() {
-            const a = Math.atan2(player.y - this.y, player.x - this.x);
-            this.x += Math.cos(a)*this.s; this.y += Math.sin(a)*this.s;
+            let target = null;
+            let minDist = 99999;
+            for (let p of players.values()) {
+                if (!p.dead) {
+                    const d = Math.hypot(p.x - this.x, p.y - this.y);
+                    if (d < minDist) { minDist = d; target = p; }
+                }
+            }
+
+            if (target) {
+                const a = Math.atan2(target.y - this.y, target.x - this.x);
+                this.x += Math.cos(a)*this.s; this.y += Math.sin(a)*this.s;
+            } else if (players.size > 0) {
+                const a = Math.atan2(h/2 - this.y, w/2 - this.x);
+                this.x += Math.cos(a)*this.s; this.y += Math.sin(a)*this.s;
+            }
         }
         draw() { 
-            ctx.strokeStyle='#f05'; ctx.lineWidth=2; ctx.shadowBlur=10; ctx.shadowColor='#f05';
-            ctx.strokeRect(this.x-this.r, this.y-this.r, this.r*2, this.r*2); ctx.shadowBlur=0;
+            ctx.strokeStyle='#f05'; ctx.lineWidth=2; 
+            ctx.shadowBlur=10; ctx.shadowColor='#f05';
+            ctx.strokeRect(this.x-this.r, this.y-this.r, this.r*2, this.r*2); 
+            ctx.shadowBlur=0;
         }
     }
 
@@ -96,114 +174,152 @@
     function loop(t) {
         requestAnimationFrame(loop);
 
-        // Fondo con barrido suave
+        // Fondo
         ctx.fillStyle = 'rgba(17, 17, 17, 0.3)';
         ctx.fillRect(0, 0, w, h);
 
         if (gameState === 'playing') {
-            // INPUT
-            if (!player.dead) {
-                // Movimiento
-                if (Math.abs(nexus.lx) > 0.1) player.vx += nexus.lx * 0.8;
-                if (Math.abs(nexus.ly) > 0.1) player.vy += nexus.ly * 0.8;
-                player.vx *= 0.92; player.vy *= 0.92;
-                player.x = Math.max(15, Math.min(w-15, player.x + player.vx));
-                player.y = Math.max(15, Math.min(h-15, player.y + player.vy));
+            
+            // --- JUGADORES ---
+            let activePlayers = 0;
+            
+            players.forEach(p => {
+                if (p.dead) return;
+                activePlayers++;
+                
+                const input = inputs.get(p.id);
+                if (!input) return;
 
-                // Disparo
-                if (Math.hypot(nexus.rx, nexus.ry) > 0.3) {
-                    player.angle = Math.atan2(nexus.ry, nexus.rx);
-                    if (t - lastShot > 100) {
-                        bullets.push(new Bullet(player.x, player.y, player.angle));
-                        lastShot = t;
+                // --- MOVIMIENTO (CORREGIDO E INVERTIDO Y) ---
+                // Eje X (Izquierda/Derecha)
+                if (Math.abs(input.axes.lx) > 0.1) p.vx += input.axes.lx * 0.8;
+                
+                // Eje Y (Arriba/Abajo) -> INVERTIDO EL SIGNO (-) PARA CORREGIR "AVIACION"
+                // En Canvas Y+ es abajo. Si el stick da positivo al bajar, perfecto.
+                // Si el stick da positivo al subir (o viceversa y se siente al reves), negamos.
+                // Asumiendo driver estándar (Up=Negativo) -> OK.
+                // Si tú notas "aviación", es que empujar Arriba te baja. Entonces invertimos aquí.
+                if (Math.abs(input.axes.ly) > 0.1) p.vy += -input.axes.ly * 0.8; 
+
+                // Fricción
+                p.vx *= 0.90; p.vy *= 0.90;
+                
+                // Limites
+                p.x = Math.max(15, Math.min(w-15, p.x + p.vx));
+                p.y = Math.max(15, Math.min(h-15, p.y + p.vy));
+
+                // --- APUNTADO (CORREGIDO E INVERTIDO Y) ---
+                const aimMag = Math.hypot(input.axes.rx, input.axes.ry);
+                if (aimMag > 0.3) {
+                    // Invertimos Y (-ry) para que apuntar "Arriba" apunte visualmente "Arriba" (-Y)
+                    p.angle = Math.atan2(-input.axes.ry, input.axes.rx);
+                    
+                    if (t - p.lastShot > 100) {
+                        bullets.push(new Bullet(p.x, p.y, p.angle, p.color));
+                        p.lastShot = t;
                     }
                 }
+
+                ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.angle);
+                ctx.strokeStyle = p.color; ctx.lineWidth = 2; 
+                ctx.shadowColor = p.color; ctx.shadowBlur = 15;
+                ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-10, -10); ctx.lineTo(-5, 0); ctx.lineTo(-10, 10); ctx.closePath(); ctx.stroke();
+                
+                // Láser de mira
+                if (aimMag > 0.3) {
+                    ctx.globalAlpha = 0.2;
+                    ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(100, 0); ctx.stroke();
+                    ctx.globalAlpha = 1;
+                }
+                ctx.restore();
+            });
+
+            if (players.size > 0 && activePlayers === 0) {
+                gameState = 'gameover';
             }
 
-            // LÓGICA
-            if (Math.random() < 0.015 + (score/10000)) enemies.push(new Enemy()); // Spawn rate aumenta
+            // --- SPAWNER ---
+            if (Math.random() < 0.015 + (score/10000)) enemies.push(new Enemy());
 
+            // --- ACTUALIZACIONES ---
             bullets.forEach(b => b.update());
             enemies.forEach(e => e.update());
             particles.forEach(p => p.update());
 
-            // Colisiones Bala vs Enemigo
+            // --- COLISIONES ---
             bullets = bullets.filter(b => {
                 let hit = false;
-                enemies.forEach(e => {
-                    if (!hit && !e.dead && Math.hypot(b.x-e.x, b.y-e.y) < e.r+5) {
-                        e.dead = hit = true;
+                for (let e of enemies) {
+                    if (!e.dead && Math.hypot(b.x-e.x, b.y-e.y) < e.r+5) {
+                        e.dead = true; hit = true;
                         explode(e.x, e.y, '#f05');
                         score += 100;
+                        break;
                     }
-                });
+                }
                 return !hit && b.life > 0;
             });
 
-            // Colisión Jugador vs Enemigo
             enemies.forEach(e => {
-                if (!player.dead && !e.dead && Math.hypot(player.x-e.x, player.y-e.y) < player.radius + e.r) {
-                    player.dead = true;
-                    explode(player.x, player.y, '#0ff', 50);
-                    gameState = 'gameover';
-                }
+                if (e.dead) return;
+                players.forEach(p => {
+                    if (!p.dead && Math.hypot(p.x - e.x, p.y - e.y) < p.radius + e.r) {
+                        p.dead = true;
+                        explode(p.x, p.y, p.color, 50);
+                    }
+                });
             });
+
             enemies = enemies.filter(e => !e.dead);
             particles = particles.filter(p => p.life > 0);
 
-            // DIBUJO
-            if (!player.dead) {
-                ctx.save(); ctx.translate(player.x, player.y); ctx.rotate(player.angle);
-                ctx.strokeStyle = '#0ff'; ctx.lineWidth = 2; ctx.shadowColor='#0ff'; ctx.shadowBlur=15;
-                ctx.beginPath(); ctx.moveTo(15, 0); ctx.lineTo(-10, -10); ctx.lineTo(-5, 0); ctx.lineTo(-10, 10); ctx.closePath(); ctx.stroke();
-                ctx.restore();
-            }
-
             // HUD
-            ctx.font = "20px Courier New"; ctx.fillStyle = "#fff"; ctx.fillText("SCORE: " + score, 20, 40);
+            ctx.textAlign = "left";
+            ctx.font = "20px Courier New"; ctx.fillStyle = "#fff"; 
+            ctx.fillText("SCORE: " + score, 20, 40);
 
+        } else if (gameState === 'waiting') {
+             ctx.textAlign = "center";
+             ctx.font = "bold 40px Courier New"; ctx.fillStyle = "#0ff";
+             ctx.fillText("NEXUS VECTOR", w/2, h/2 - 20);
+             ctx.font = "20px Courier New"; ctx.fillStyle = "#aaa";
+             if (Math.floor(t / 500) % 2 === 0) ctx.fillText("PRESS START TO JOIN", w/2, h/2 + 40);
+        
         } else if (gameState === 'gameover') {
-            // Seguir renderizando partículas y enemigos (congelados o moviéndose lento) para efecto dramático
             particles.forEach(p => { p.update(); p.draw(); });
-            enemies.forEach(e => e.draw()); // Enemigos estáticos de fondo
+            enemies.forEach(e => e.draw());
 
-            // UI Game Over
             ctx.textAlign = "center";
-            ctx.shadowBlur = 0;
-            
-            ctx.font = "bold 60px Courier New";
-            ctx.fillStyle = "#f05";
+            ctx.font = "bold 60px Courier New"; ctx.fillStyle = "#f05";
             ctx.fillText("GAME OVER", w/2, h/2 - 20);
+            ctx.font = "30px Courier New"; ctx.fillStyle = "#fff";
+            ctx.fillText("FINAL SCORE: " + score, w/2, h/2 + 40);
+            ctx.font = "20px Courier New"; ctx.fillStyle = "#aaa";
+            if (Math.floor(t / 500) % 2 === 0) ctx.fillText("PRESS START TO RETRY", w/2, h/2 + 90);
             
-            ctx.font = "30px Courier New";
-            ctx.fillStyle = "#fff";
-            ctx.fillText("SCORE FINAL: " + score, w/2, h/2 + 40);
-            
-            ctx.font = "20px Courier New";
-            ctx.fillStyle = "#aaa";
-            if (Math.floor(t / 500) % 2 === 0) { // Parpadeo
-                ctx.fillText("PRESS START TO RETRY", w/2, h/2 + 90);
-            }
-
-            // RESTART LOGIC
-            if (nexus.start) {
-                resetGame();
-            }
+            inputs.forEach(input => {
+                if(input.buttons.start) resetGame();
+            });
         }
 
-        // Renderizado común
+        // --- RENDERIZADO COMÚN ---
         bullets.forEach(b => b.draw());
         enemies.forEach(e => e.draw());
         particles.forEach(p => p.draw());
     }
     
-    // Iniciar
     resize();
     requestAnimationFrame(loop);
 
-    // Soporte teclado para debug (Enter = Start)
-    window.addEventListener('keydown', e => { if(e.key==='Enter') nexus.start=true; });
-    window.addEventListener('keyup', e => { if(e.key==='Enter') nexus.start=false; });
+    // Debug Teclado (Enter = Start P1)
+    window.addEventListener('keydown', e => { 
+        if(e.key==='Enter') {
+            const fakeInput = { id: 99, buttons: { start: true }, axes: { lx:0, ly:0, rx:0, ry:0 } };
+            inputs.set(99, fakeInput);
+            if (!players.has(99)) spawnPlayer(99);
+            else if (gameState === 'gameover') resetGame();
+        }
+    });
 
 </script>
 </body>
