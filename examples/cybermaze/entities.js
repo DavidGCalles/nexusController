@@ -12,8 +12,54 @@ const ENTITY_CONFIG = {
     
     // Stats
     MAX_ENERGY: 100,
-    ENERGY_REGEN: 0.8
+    ENERGY_REGEN: 0.8,
+    
+    // Disparo
+    SHOT_COST: 10,
+    SHOT_COOLDOWN: 8, // Frames entre disparos
+    BULLET_SPEED: 14,
+    BULLET_RADIUS: 4
 };
+
+class Bullet {
+    constructor(x, y, angle, ownerId, color) {
+        this.x = x;
+        this.y = y;
+        this.vx = Math.cos(angle) * ENTITY_CONFIG.BULLET_SPEED;
+        this.vy = Math.sin(angle) * ENTITY_CONFIG.BULLET_SPEED;
+        this.ownerId = ownerId;
+        this.color = color;
+        this.alive = true;
+    }
+
+    update(grid, w, h) {
+        this.x += this.vx;
+        this.y += this.vy;
+
+        // Check Limites Pantalla
+        if (this.x < 0 || this.x > w || this.y < 0 || this.y > h) {
+            this.alive = false;
+            return;
+        }
+
+        // Check Muros
+        const hit = grid.checkProjectileHit(this.x, this.y);
+        if (hit) {
+            this.alive = false;
+            // Aquí podríamos añadir partículas si hit === 'DESTROYED_WALL'
+        }
+    }
+
+    draw(ctx) {
+        ctx.fillStyle = this.color;
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = this.color;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, ENTITY_CONFIG.BULLET_RADIUS, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+    }
+}
 
 class Player {
     constructor(id, x, y, color) {
@@ -22,40 +68,46 @@ class Player {
         this.y = y;
         this.color = color;
         this.radius = ENTITY_CONFIG.PLAYER_RADIUS;
-        
-        // Orientación (Radianes). 0 = Derecha.
         this.angle = 0; 
 
         // Estado interno
         this.energy = ENTITY_CONFIG.MAX_ENERGY;
-        this.isDead = false;
+        this.shotCooldown = 0;
 
-        // Dash System
+        // Dash
         this.isDashing = false;
         this.dashFrame = 0;      
         this.dashVector = { x: 0, y: 0 }; 
     }
 
-    update(grid, w, h) {
+    // AHORA RECIBE EL ARRAY DE BALAS PARA DISPARAR
+    update(grid, w, h, bullets) {
         const pad = window.getController(this.id);
         if (!pad) return; 
 
-        // 1. Energía
+        // 1. Energía y Cooldowns
+        if (this.shotCooldown > 0) this.shotCooldown--;
+
         if (!this.isDashing && this.energy < ENTITY_CONFIG.MAX_ENERGY) {
             this.energy = Math.min(ENTITY_CONFIG.MAX_ENERGY, this.energy + ENTITY_CONFIG.ENERGY_REGEN);
         }
 
-        // 2. Dash Trigger
+        // 2. DISPARO (RT)
+        // Usamos axes.rt porque es un gatillo analógico (0.0 a 1.0)
+        if (pad.axes.rt > 0.5 && this.shotCooldown <= 0 && this.energy >= ENTITY_CONFIG.SHOT_COST) {
+            this.shoot(bullets);
+        }
+
+        // 3. Dash (LT o Botón Sur)
         const dashPressed = (pad.axes.lt > 0.5) || pad.buttons.south;
         if (dashPressed && !this.isDashing && this.energy >= ENTITY_CONFIG.DASH_COST) {
             this.startDash(pad);
         }
 
-        // 3. Movimiento (Stick Izquierdo)
-        let dx = 0;
-        let dy = 0;
+        // 4. Movimiento
+        let dx = 0, dy = 0;
         const rawLx = Math.abs(pad.axes.lx) > 0.1 ? pad.axes.lx : 0;
-        const rawLy = Math.abs(pad.axes.ly) > 0.1 ? -pad.axes.ly : 0; // Eje Y Invertido
+        const rawLy = Math.abs(pad.axes.ly) > 0.1 ? -pad.axes.ly : 0; 
 
         if (this.isDashing) {
             const speed = ENTITY_CONFIG.PLAYER_SPEED * ENTITY_CONFIG.DASH_SPEED_MULT;
@@ -68,30 +120,34 @@ class Player {
             dy = rawLy * ENTITY_CONFIG.PLAYER_SPEED;
         }
 
-        // 4. Orientación (Cálculo del Ángulo)
-        // Prioridad: Stick Derecho (Apuntar)
+        // 5. Orientación
         const aimX = Math.abs(pad.axes.rx) > 0.1 ? pad.axes.rx : 0;
-        const aimY = Math.abs(pad.axes.ry) > 0.1 ? -pad.axes.ry : 0; // Eje Y Invertido también al apuntar
+        const aimY = Math.abs(pad.axes.ry) > 0.1 ? -pad.axes.ry : 0;
 
         if (aimX !== 0 || aimY !== 0) {
             this.angle = Math.atan2(aimY, aimX);
-        } 
-        // Fallback: Si no apuntas, miras hacia donde caminas (si te mueves)
-        else if (dx !== 0 || dy !== 0) {
+        } else if (dx !== 0 || dy !== 0) {
             this.angle = Math.atan2(dy, dx);
         }
 
-        // 5. Colisiones y Posición
-        if (!grid.checkCollision(this.x + dx, this.y, this.radius)) {
-            this.x += dx;
-        }
-        if (!grid.checkCollision(this.x, this.y + dy, this.radius)) {
-            this.y += dy;
-        }
+        // 6. Colisiones Físicas
+        if (!grid.checkCollision(this.x + dx, this.y, this.radius)) this.x += dx;
+        if (!grid.checkCollision(this.x, this.y + dy, this.radius)) this.y += dy;
 
-        // 6. Límites
+        // 7. Límites
         this.x = Math.max(this.radius, Math.min(w - this.radius, this.x));
         this.y = Math.max(this.radius, Math.min(h - this.radius, this.y));
+    }
+
+    shoot(bullets) {
+        this.energy -= ENTITY_CONFIG.SHOT_COST;
+        this.shotCooldown = ENTITY_CONFIG.SHOT_COOLDOWN;
+        
+        // La bala sale desde la "punta" de la flecha
+        const tipX = this.x + Math.cos(this.angle) * (this.radius + 5);
+        const tipY = this.y + Math.sin(this.angle) * (this.radius + 5);
+
+        bullets.push(new Bullet(tipX, tipY, this.angle, this.id, this.color));
     }
 
     startDash(pad) {
@@ -99,7 +155,6 @@ class Player {
         let dirY = -pad.axes.ly; 
 
         if (Math.abs(dirX) < 0.1 && Math.abs(dirY) < 0.1) {
-            // Si no se mueve, usa el ángulo actual de la flecha
             dirX = Math.cos(this.angle);
             dirY = Math.sin(this.angle);
         }
@@ -119,23 +174,16 @@ class Player {
     draw(ctx) {
         ctx.save();
         ctx.translate(this.x, this.y);
-        ctx.rotate(this.angle); // Rotamos el contexto según hacia donde mire
+        ctx.rotate(this.angle); 
 
-        // Dibujar Flecha / Nave
         ctx.beginPath();
-        // Punta (Derecha, ángulo 0)
         ctx.moveTo(this.radius, 0);
-        // Atrás Abajo
         ctx.lineTo(-this.radius, this.radius * 0.8);
-        // Centro hundido (forma de flecha)
         ctx.lineTo(-this.radius * 0.4, 0);
-        // Atrás Arriba
         ctx.lineTo(-this.radius, -this.radius * 0.8);
         ctx.closePath();
 
         ctx.fillStyle = this.color;
-        
-        // Efectos de Neon
         if (this.isDashing) {
             ctx.shadowColor = this.color;
             ctx.shadowBlur = 25;
@@ -144,8 +192,7 @@ class Player {
             ctx.shadowColor = this.color;
         }
         ctx.fill();
-        
-        ctx.restore(); // Restauramos rotación para que no afecte a la barra de vida
+        ctx.restore(); 
 
         this.drawUI(ctx);
     }
@@ -154,15 +201,15 @@ class Player {
         const w = 30;
         const h = 4;
         const x = this.x - w / 2;
-        const y = this.y + this.radius + 10; // Un poco más separado por la rotación
+        const y = this.y + this.radius + 10; 
 
-        // Fondo barra
         ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
         ctx.fillRect(x, y, w, h);
 
-        // Barra energía
         const energyPct = this.energy / ENTITY_CONFIG.MAX_ENERGY;
-        ctx.fillStyle = this.energy >= ENTITY_CONFIG.DASH_COST ? '#00ffff' : '#555'; 
+        // Indicador visual: Si puedes disparar, verde, si no, gris
+        // (Ojo, priorizamos Dash en la UI, pero podrías cambiarlo)
+        ctx.fillStyle = this.energy >= ENTITY_CONFIG.SHOT_COST ? '#00ffff' : '#ff0000'; 
         ctx.fillRect(x, y, w * energyPct, h);
     }
 }
