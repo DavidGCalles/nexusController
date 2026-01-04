@@ -11,7 +11,8 @@ class Grid {
         
         this.map = []; 
         this.destructibles = []; 
-        this.spawnPoints = [];   
+        this.playerSpawns = [];
+        this.enemySpawns = [];
 
         // Buffer Gráfico
         this.staticLayer = document.createElement('canvas');
@@ -21,12 +22,14 @@ class Grid {
     }
 
     generate() {
-        // 1. Reset
+        // 1. Reset & Inicialización (Todo Sólido)
         this.map = Array(CONFIG.ROWS).fill().map(() => Array(CONFIG.COLS).fill(1));
         this.destructibles = [];
         this.spawnPoints = [];
 
-        // 2. Excavación
+        // ---------------------------------------------------------
+        // FASE 1: ESCULPIR LABERINTO (Recursive Backtracker)
+        // ---------------------------------------------------------
         const wCorr = CONFIG.MAZE_CORRIDOR_WIDTH;
         const step = wCorr * 2;
         const stack = [{ c: 1, r: 1 }];
@@ -35,7 +38,7 @@ class Grid {
             for (let dr = 0; dr < wCorr; dr++) {
                 for (let dc = 0; dc < wCorr; dc++) {
                     if (this.isValid(r + dr, c + dc)) {
-                        this.map[r + dr][c + dc] = 0; 
+                        this.map[r + dr][c + dc] = 0; // Aire
                     }
                 }
             }
@@ -54,6 +57,7 @@ class Grid {
                 const nc = cur.c + dc;
                 const nr = cur.r + dr;
 
+                // Solo excavamos si es Muro Sólido (1)
                 if (nc > 0 && nc < CONFIG.COLS - wCorr && 
                     nr > 0 && nr < CONFIG.ROWS - wCorr && 
                     this.map[nr][nc] === 1) { 
@@ -62,7 +66,6 @@ class Grid {
                     const path_r = cur.r + dr / 2;
                     carve(path_r, path_c); 
                     carve(nr, nc);         
-                    
                     stack.push({ c: nc, r: nr });
                     found = true;
                     break;
@@ -71,40 +74,50 @@ class Grid {
             if (!found) stack.pop();
         }
 
-        // 3. Muros Destructibles
+        // ---------------------------------------------------------
+        // FASE 2: DECADENCIA ESTRUCTURAL (NUEVO)
+        // Convertimos parte de los muros estructurales en destructibles
+        // ---------------------------------------------------------
         for (let r = 1; r < CONFIG.ROWS - 1; r++) {
             for (let c = 1; c < CONFIG.COLS - 1; c++) {
-                if (this.map[r][c] === 0 && Math.random() < CONFIG.MAZE_BREAKABLE_CHANCE) {
+                // Si es un muro sólido (1)
+                if (this.map[r][c] === 1) {
+                    // Protegemos el marco exterior absoluto para que nadie se salga del mapa
+                    if (r === 0 || c === 0 || r === CONFIG.ROWS - 1 || c === CONFIG.COLS - 1) continue;
+
+                    if (Math.random() < CONFIG.MAZE_WALL_WEAKNESS_RATIO) {
+                        this.map[r][c] = 2; // Degradamos a destructible
+                        this.destructibles.push({ c, r, active: true });
+                    }
+                }
+            }
+        }
+
+        // ---------------------------------------------------------
+        // FASE 3: ESCOMBROS (DEBRIS)
+        // Añadimos obstáculos en los pasillos vacíos
+        // ---------------------------------------------------------
+        for (let r = 1; r < CONFIG.ROWS - 1; r++) {
+            for (let c = 1; c < CONFIG.COLS - 1; c++) {
+                // Si es aire (0), a veces ponemos un bloque
+                if (this.map[r][c] === 0 && Math.random() < CONFIG.MAZE_DEBRIS_CHANCE) {
+                    // Protegemos zona de seguridad inicial (esquina 1,1)
                     if (r < 5 && c < 5) continue; 
+                    
                     this.map[r][c] = 2; 
                     this.destructibles.push({ c, r, active: true });
                 }
             }
         }
 
-        // 4. Spawns
+        // 4. Calcular Spawns Seguros (Ahora es más difícil porque hay más 2s)
         this.findStrategicSpawns();
 
-        // 5. Pintar
+        // 5. Render
         this.bakeStaticLayer();
     }
 
-    findStrategicSpawns() {
-        const candidates = [];
-        const centerX = CONFIG.COLS / 2;
-        const centerY = CONFIG.ROWS / 2;
-
-        for (let r = 1; r < CONFIG.ROWS - 1; r++) {
-            for (let c = 1; c < CONFIG.COLS - 1; c++) {
-                if (this.map[r][c] === 0) {
-                    const dist = Math.pow(c - centerX, 2) + Math.pow(r - centerY, 2);
-                    candidates.push({ r, c, dist });
-                }
-            }
-        }
-        candidates.sort((a, b) => b.dist - a.dist);
-        this.spawnPoints = candidates.slice(0, 12).map(p => ({ r: p.r, c: p.c }));
-    }
+    
 
     bakeStaticLayer() {
         const ctx = this.staticCtx;
@@ -219,18 +232,63 @@ class Grid {
         return null; // Aire
     }
 
-    getSafeSpawn() {
-        if (this.spawnPoints.length > 0) {
-            const idx = Math.floor(Math.random() * this.spawnPoints.length);
-            const pt = this.spawnPoints.splice(idx, 1)[0];
-            return { 
-                x: this.marginLeft + (pt.c * this.cellSize) + (this.cellSize / 2), 
-                y: this.marginTop + (pt.r * this.cellSize) + (this.cellSize / 2) 
-            };
+    findStrategicSpawns() {
+        const candidates = [];
+        const centerX = CONFIG.COLS / 2;
+        const centerY = CONFIG.ROWS / 2;
+
+        // Barrido buscando suelo firme (0)
+        for (let r = 1; r < CONFIG.ROWS - 1; r++) {
+            for (let c = 1; c < CONFIG.COLS - 1; c++) {
+                if (this.map[r][c] === 0) {
+                    const dist = Math.pow(c - centerX, 2) + Math.pow(r - centerY, 2);
+                    candidates.push({ r, c, dist });
+                }
+            }
         }
-        return { 
-            x: this.marginLeft + (this.cellSize * 1.5), 
-            y: this.marginTop + (this.cellSize * 1.5) 
+
+        // 1. SPAWNS DE JUGADORES (LEJOS DEL CENTRO)
+        // Ordenamos descendente (Mayor distancia primero)
+        candidates.sort((a, b) => b.dist - a.dist);
+        // Nos quedamos con los 16 más lejanos para dar variedad
+        this.playerSpawns = candidates.slice(0, 16).map(p => ({ r: p.r, c: p.c }));
+
+        // 2. SPAWNS DE ENEMIGOS (CERCA DEL CENTRO)
+        // Ordenamos ascendente (Menor distancia primero)
+        candidates.sort((a, b) => a.dist - b.dist);
+        // Nos quedamos con el 50% central de candidatos para que no salgan todos en el mismo pixel
+        // pero que tiendan al centro.
+        const enemyCandidateCount = Math.floor(candidates.length * 0.5);
+        this.enemySpawns = candidates.slice(0, enemyCandidateCount).map(p => ({ r: p.r, c: p.c }));
+        
+        console.log(`📍 Spawns: ${this.playerSpawns.length} Player (Edge) / ${this.enemySpawns.length} Enemy (Center)`);
+    }
+
+    getPlayerSpawn() {
+        if (this.playerSpawns.length > 0) {
+            const idx = Math.floor(Math.random() * this.playerSpawns.length);
+            // Ojo: No hacemos splice para permitir reusar si hay muchos jugadores,
+            // pero idealmente deberíamos evitar superposición en main.js
+            const pt = this.playerSpawns[idx]; 
+            return this.gridToPixel(pt.r, pt.c);
+        }
+        return this.gridToPixel(1, 1); // Fallback
+    }
+
+    getEnemySpawn() {
+        if (this.enemySpawns.length > 0) {
+            const idx = Math.floor(Math.random() * this.enemySpawns.length);
+            const pt = this.enemySpawns[idx];
+            return this.gridToPixel(pt.r, pt.c);
+        }
+        return this.gridToPixel(CONFIG.ROWS/2, CONFIG.COLS/2); // Fallback centro
+    }
+
+    // Helper para no repetir fórmula
+    gridToPixel(r, c) {
+        return {
+            x: this.marginLeft + (c * this.cellSize) + (this.cellSize / 2),
+            y: this.marginTop + (r * this.cellSize) + (this.cellSize / 2)
         };
     }
 }

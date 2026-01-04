@@ -1,12 +1,17 @@
 // config.js
 const CONFIG = {
-    // Dimensiones lógicas (afecta a la densidad del laberinto)
+    // Dimensiones
     COLS: 41, 
     ROWS: 23,
 
-    // Parametrización del generador
-    MAZE_CORRIDOR_WIDTH: 2, // Ancho de pasillo en bloques (2 es cómodo para 4 jugadores)
-    MAZE_BREAKABLE_CHANCE: 0.15, // 15% de probabilidad de generar bloques destructibles
+    // GENERACIÓN DE LABERINTO
+    MAZE_CORRIDOR_WIDTH: 2,
+    
+    // 1. Estructura: % de paredes del laberinto que nacen siendo rompibles
+    MAZE_WALL_WEAKNESS_RATIO: 0.3, // El 30% de las paredes maestras se pueden romper
+    
+    // 2. Relleno: % de pasillos vacíos que tienen escombros
+    MAZE_DEBRIS_CHANCE: 0.1, 
     
     // Configuración visual
     WALL_COLOR: '#222',
