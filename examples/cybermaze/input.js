@@ -1,30 +1,42 @@
-// ==========================================
-// 1. NEXUS INPUT
-// ==========================================
+// input.js
 const WS_URL = 'ws://localhost:8765';
-let nexus = { lx: 0, ly: 0, rx: 0, ry: 0, start: false, rt: 0, lt: 0 };
-let lastNexus = { ...nexus };
+
+// Almacén de estados. 
+// Key: ID del mando (según Rust). Value: Struct completo.
+const controllers = {}; 
 
 function connect() {
+    console.log("📡 Intentando conectar al WebSocket...");
     const socket = new WebSocket(WS_URL);
+    
+    socket.onopen = () => console.log("✅ Conectado al Backend Rust");
+    
     socket.onmessage = e => { 
         try { 
-            nexus = JSON.parse(e.data); 
-            if (typeof nexus.rt === 'undefined') nexus.rt = 0;
-            if (typeof nexus.lt === 'undefined') nexus.lt = 0;
-        } catch(err){} 
+            // Asumimos que llega un JSON con la estructura ControllerState
+            const state = JSON.parse(e.data);
+            
+            // Gestión básica de conexión/desconexión
+            if (state.connected) {
+                controllers[state.id] = state;
+            } else {
+                delete controllers[state.id];
+            }
+        } catch(err) {
+            console.error("❌ Error parseando input:", err);
+        } 
     };
-    socket.onclose = () => setTimeout(connect, 2000);
+
+    socket.onerror = (err) => console.error("⚠️ Error WS:", err);
+
+    socket.onclose = () => {
+        console.warn("🔌 Desconectado. Reintentando en 2s...");
+        setTimeout(connect, 2000);
+    };
 }
+
 connect();
 
-// Debug Teclado
-window.addEventListener('keydown', e => {
-    if(e.key==='Enter') nexus.start=true;
-    if(e.key==='ArrowRight') nexus.lx = 1;
-    if(e.key==='ArrowDown') nexus.ly = 1;
-});
-window.addEventListener('keyup', e => {
-    if(e.key==='Enter') nexus.start=false;
-    if(['ArrowRight','ArrowDown'].includes(e.key)) { nexus.lx=0; nexus.ly=0; }
-});
+// API Pública para el resto del juego
+window.getController = (id) => controllers[id] || null;
+window.getAllControllers = () => Object.values(controllers);
