@@ -1,91 +1,90 @@
-***
-# 🎮 ControlNexus — Gamepad Abstraction & Packaging
+# 🦀 NexusController
 
-ControlNexus normaliza entradas de gamepads y proporciona herramientas para mapear, depurar y exponer los datos por WebSocket o en un paquete instalable de Python. El repositorio incluye los mappers interactivos y demos en `examples/`.
+> **⚠️ ARCHITECTURAL NOTE (Regression from v0.1):**
+> This version creates a high-performance, deterministic pipeline, but currently lacks the "Scientific Mapper" (software normalization) found in the Python legacy version.
+> * **Current State:** Direct hardware throughput. Requires standard controllers (Xbox/PS4/PS5) with healthy analog sticks (no drift).
+> * **Immediate Roadmap:** Phase 2 focuses entirely on re-implementing software deadzones and dynamic calibration to restore full hardware compatibility.
 
-Este README fue actualizado para reflejar la nueva estructura del repositorio y el flujo de instalación/ejecución como paquete.
+## 🎯 Mission
+**NexusController** is a hardware-agnostic input daemon designed to abstract complex controller ecosystems into a standardized, low-latency WebSocket stream.
 
-## 🧭 Resumen de la nueva estructura
-- Código empaquetado: `src/nexuscontroller/`
-  - `src/nexuscontroller/core.py` — implementación principal (`InputSource`).
-  - `src/nexuscontroller/server.py` — servidor WebSocket con función `run()`.
-  - `src/nexuscontroller/default_config.json` — configuración por defecto incluida en el paquete.
-  - `src/nexuscontroller/mappers/` — versiones de los mappers con `run()` en cada módulo.
-- Ejemplos y herramientas de depuración se mantienen en la raíz: `examples/`, `debug/`.
+It acts as a middleware between your physical devices and your applications (web games, creative coding sketches, UI prototypes), decoupling input handling from application logic.
 
-## ✅ Requisitos
-- Python 3.10+ (probado con 3.12)
+### Why Rust?
+Moved from Python (`pygame` + `asyncio`) to **Rust** to guarantee:
+* **Deterministic Latency:** Zero Garbage Collection pauses.
+* **Concurrency:** Separated high-frequency polling (Input Thread) from network broadcasting (Server Thread).
+* **Type Safety:** Strict compilation guarantees for the input pipeline.
 
-Dependencias (se instalarán desde `pyproject.toml` si instalas el paquete):
-- `pygame`
-- `websockets`
-- `pyserial` (opcional, para conectividad serial)
+## 🏗️ Architecture
+* **Input Layer:** `gilrs` (Cross-platform, headless, event-based).
+* **Async Runtime:** `tokio` (Industry standard for async I/O).
+* **Network:** `tokio-tungstenite` (WebSocket).
+* **Serialization:** `serde_json` (Standardized JSON output).
 
-## Instalación (editable — recomendado para desarrollo)
-En PowerShell, desde la raíz del repositorio:
-```powershell
-python -m pip install --upgrade pip
-python -m pip install -e .
+## 🎮 Proof of Concept: CyberMaze
+The repository includes **CyberMaze**, a complete twin-stick shooter demo running in the browser that validates the multi-device architecture.
+
+* **Location:** `examples/cybermaze/`
+* **Tech:** HTML5 Canvas + Vanilla JS.
+* **Features Validated:**
+    * Real-time multi-controller support (Hot-plugging).
+    * Low-latency WebSocket streaming (60fps+).
+    * JSON Protocol parsing in JS.
+
+## 🚀 Quick Start
+
+### 1. Requirements
+* Rust (latest stable via `rustup`).
+* A gamepad connected (Xbox, PS4/5, Generic).
+
+### 2. Run the Daemon
+```bash
+# Clone and enter the repo
+git clone [https://github.com/davidgcalles/nexuscontroller.git](https://github.com/davidgcalles/nexuscontroller.git)
+cd nexuscontroller
+
+# Run via Cargo
+cargo run --release
 ```
 
-Esto instala el paquete en modo editable y crea los entry points CLI descritos abajo.
+You should see: 📡 WS Server listening on ws://0.0.0.0:8765
 
-Alternativa (sin instalar): exporta `src` en `PYTHONPATH` y usa los shims:
-```powershell
-$env:PYTHONPATH = "src"
-python main.py    # shim que invoca nexuscontroller.server.run()
+You can also download an executable from releases page.
+
+### 3. Test with CyberMaze
+- Simply open examples/cybermaze/index.html in your web browser.
+- Press START on any controller to join the lobby.
+- Use Left Stick to move and Right Stick to aim/shoot.
+
+## 🛣️ Roadmap & Status
+
+Current focus: **Phase 2 (Intelligent Driver)** - Restoring feature parity with Python v0.1.
+
+- [x] **Phase 1: Plumbing (The Core)**
+    - [x] `nexus-core`: Raw event loop with `gilrs`.
+    - [x] `nexus-server`: Async WebSocket infrastructure.
+    - [x] JSON Protocol implementation.
+
+- [ ] **Phase 2: The "Smart" Driver (Priority)**
+    - [ ] **Signal Normalization:** Implement software deadzones and "anti-drift" logic (Replaces `scientific_mapper.py`).
+    - [ ] **Data-Driven Configuration:** JSON-based remapping for non-standard controllers.
+    - [ ] **Calibration Tool:** CLI utility to generate hardware profiles.
+
+- [ ] **Phase 3: Orchestration & Hardware Expansion**
+    - [ ] **Binary Protocol / Bit-Packing:** Fast-path serialization for serial/hardware consumers.
+    - [ ] **Serial Broadcasting:** Output stream for microcontrollers (ESP-NOW bridges).
+    - [ ] **Multi-Controller Registry:** Persistent player slots and robust hot-plugging management.
+
+# 📂 Project Structure
 ```
-
-## Uso — comandos disponibles
-- Ejecutar el servidor WebSocket (recomendado tras `pip install -e .`):
-```powershell
-nexus-server
+.
+├── src/                # Rust Source Code
+│   ├── main.rs         # Daemon Entry Point
+│   └── bin/            # Utility binaries (sniffers)
+├── examples/           # Client-side implementations
+│   └── cybermaze/      # Reference Game Implementation
+└── legacy-python/      # Old Python v0.1.0 implementation (Archived)
 ```
-o alternativamente:
-```powershell
-python -m nexuscontroller.server
-```
-
-- Ejecutar el mapper científico (entry point):
-```powershell
-nexus-map
-```
-o alternativamente:
-```powershell
-python -m nexuscontroller.mappers.scientific_mapper
-```
-
-Si no se instaló el paquete, agrega `src` a `PYTHONPATH` (ver arriba) para que `python main.py` funcione como antes.
-
-## Flujo rápido para usar el sistema
-1. Instala editable: `python -m pip install -e .`.
-2. Si necesitas generar/actualizar un mapeo de controlador:
-   - `nexus-map` (o `python -m nexuscontroller.mappers.scientific_mapper`).
-   - Esto generará un `controller_config.json` en el directorio de ejecución.
-3. Ejecuta el servidor de entrada:
-   - `nexus-server` (o `python -m nexuscontroller.server`).
-4. Abre un cliente (por ejemplo `examples/cybermaze/cyberMaze.html`) que se conecte a `ws://localhost:8765`.
-
-## Notas importantes
-- El paquete incluye `default_config.json` usado como fallback cuando no se pasa un `config_path` a `InputSource`.
-- Las entradas de los mappers quedan en `src/nexuscontroller/mappers/` y exponen `run()` para ser usadas como entry points.
-- Los shims en la raíz (`main.py`, `mappers/*.py`) siguen presentes para compatibilidad local, pero la forma recomendada es instalar el paquete editable y usar los entry points.
-
-## Formatos de salida (resumen)
-- JSON via WebSocket: ejes normalizados en `[-1.0, 1.0]`, botones `0/1`. (función: `InputSource.to_json`).
-- Binario: `InputSource.to_bytes(data)` usa formato `'<Hhhhhhh'` para empaquetado compacto.
-
-## Examples & Demo
-- `examples/cybermaze/` — demo Canvas que puede consumir el WebSocket del servidor.
-
-## Troubleshooting rápido
-- Si `nexus-server` no se encuentra, asegúrate de haber corrido `python -m pip install -e .`.
-- Para ejecutar sin instalar, exporta `src` en `PYTHONPATH` y usa los shims (`python main.py`).
-- Si el mando no se detecta: cierra Steam/otros remapeadores, conecta el mando y vuelve a ejecutar el mapper.
-
----
-
-Si quieres, puedo también:
-- agregar un `requirements.txt` con las dependencias fijas;
-- añadir instrucciones de publicación (PyPI) o CI para publicar releases;
-- automatizar la generación de `controller_config.json` en `examples/` para demos.
+# 📜 License
+MIT

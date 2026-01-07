@@ -1,0 +1,27 @@
+[package]
+name = "nexuscontroller"
+default-run = "nexuscontroller"
+version = "0.2.0"
+edition = "2021"
+authors = ["DavidGCalles"]
+
+# Ver ADR-001 y ADR-002
+[dependencies]
+# Input Handling (Cross-platform, headless)
+gilrs = { version = "0.10", default-features = false, features = ["xinput"] }
+
+# Async Runtime & Networking
+tokio = { version = "1", features = ["full"] }
+tokio-tungstenite = "0.20" # WebSocket implementation
+futures-util = "0.3"       # Utilities for async streams (Sink/Stream)
+
+# Serialization & Configuration
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Logging infrastructure
+log = "0.4"
+env_logger = "0.10"
+
+# Error handling (opcional pero recomendada para no volverse loco con Result<>)
+anyhow = "1.0"
