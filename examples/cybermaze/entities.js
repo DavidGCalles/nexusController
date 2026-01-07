@@ -16,7 +16,7 @@ const ENTITY_CONFIG = {
     ENERGY_REGEN: 0.8,
     
     // DISPARO JUGADOR
-    SHOT_COST: 2,
+    SHOT_COST: 10,
     SHOT_COOLDOWN: 8, 
     BULLET_SPEED: 14,
     BULLET_RADIUS: 4,
@@ -25,7 +25,7 @@ const ENTITY_CONFIG = {
     // ENEMIGOS
     ENEMY_SPEED: 2.5,
     ENEMY_VISION: 400, // Distancia a la que te ven
-    ENEMY_FIRE_RATE: 60, // Frames entre disparos del Diamante
+    ENEMY_FIRE_RATE: 8, // Frames entre disparos del Diamante
 };
 
 class Bullet {

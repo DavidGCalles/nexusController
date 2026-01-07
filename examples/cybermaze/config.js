@@ -1,8 +1,8 @@
 // config.js
 const CONFIG = {
     // Dimensiones
-    COLS: 41, 
-    ROWS: 23,
+    COLS: 30, 
+    ROWS: 30,
 
     // GENERACIÓN DE LABERINTO
     MAZE_CORRIDOR_WIDTH: 2,
@@ -11,7 +11,7 @@ const CONFIG = {
     MAZE_WALL_WEAKNESS_RATIO: 0.3, // El 30% de las paredes maestras se pueden romper
     
     // 2. Relleno: % de pasillos vacíos que tienen escombros
-    MAZE_DEBRIS_CHANCE: 0.1, 
+    MAZE_DEBRIS_CHANCE: 0.02, 
     
     // Configuración visual
     WALL_COLOR: '#222',
