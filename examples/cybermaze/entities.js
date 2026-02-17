@@ -226,7 +226,7 @@ class Player extends LivingEntity {
         const w = ENTITY_CONFIG.UI_W;
         const h = ENTITY_CONFIG.UI_H;
         const x = this.x - w / 2;
-        const y = this.y + this.radius + ENTITY_CONFIG.UI_Y_OFFSET + h + 2;
+        const y = (this.y - this.radius - ENTITY_CONFIG.UI_Y_OFFSET) + h + 2;
         ctx.fillStyle = '#003333'; ctx.fillRect(x, y, w, h);
         const enPct = this.energy / ENTITY_CONFIG.MAX_ENERGY;
         ctx.fillStyle = '#00ffff'; ctx.fillRect(x, y, w * enPct, h);
