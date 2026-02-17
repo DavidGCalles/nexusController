@@ -41,7 +41,7 @@ window.launchGame = function(modeId, levelId) {
 
     gameGrid = new Grid(w, h); 
     const mapToLoad = levelId || 'RANDOM';
-    const finalCellSize = gameGrid.loadLevel(mapToLoad);
+    const finalCellSize = gameGrid.loadLevel(mapToLoad, currentMode);
     updateEntityScale(finalCellSize); 
 
     // 1. SPAWN JUGADORES
@@ -145,27 +145,34 @@ function loop() {
 
         // 4. GESTIÓN DE EMISORES (Generadores de Enemigos)
         if (gameGrid) {
-            gameGrid.emitters.forEach(emitter => {
+            for (let i = gameGrid.emitters.length - 1; i >= 0; i--) {
+                const emitter = gameGrid.emitters[i];
+
+                if (emitter.stock === 0) {
+                    gameGrid.emitters.splice(i, 1);
+                    continue;
+                }
+                
                 emitter.timer--;
                 if (emitter.timer <= 0) {
-                    // Resetear timer
                     emitter.timer = emitter.cooldown;
                     
-                    // Comprobar límite de población para no saturar
                     if (enemies.length < 30) {
                         const px = gameGrid.gridToPixel(emitter.r, emitter.c);
                         
-                        // Determinar tipo
                         let typeToSpawn = emitter.type;
                         if (typeToSpawn === 'random') {
                              typeToSpawn = randomEnemyType();
                         }
                         
-                        // Efecto de spawn (opcional) y creación
                         enemies.push(new Enemy(typeToSpawn, px.x, px.y));
+
+                        if (emitter.stock > 0) {
+                            emitter.stock--;
+                        }
                     }
                 }
-            });
+            }
         }
 
         // 4. ENEMIGOS (IA OODA)
@@ -207,7 +214,7 @@ function loop() {
         // 5. HUD / VICTORIA
         // (Lógica simplificada por ahora)
         if (currentMode === 'clear' || currentMode === 'operations') {
-            if (activeEnemies === 0 && gameGrid.enemySpawners.length === 0) {
+            if (activeEnemies === 0 && gameGrid.emitters.length === 0) {
                 drawOverlay(ctx, w, h, '#00ff00', "MISSION ACCOMPLISHED");
                 checkReset(players);
             } else if (players.every(p => p.isDead)) {

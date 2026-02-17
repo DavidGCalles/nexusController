@@ -4,10 +4,10 @@
 // ==========================================
 
 const GAME_MODES = [
-    { id: 'operations', name: 'OPERACIONES', desc: 'Misiones tácticas en mapas diseñados.' },
-    { id: 'clear', name: 'LIMPIEZA DE ZONA', desc: 'Mapa Procedural. Elimina hostiles.' },
-    { id: 'survival', name: 'SUPERVIVENCIA', desc: '[WIP] Resiste en un mapa infinito.' },
-    { id: 'pvp', name: 'DEATHMATCH', desc: '[WIP] Combate 4 jugadores.' }
+    { id: 'operations', name: 'OPERACIONES', desc: 'Misiones tácticas en mapas diseñados.', emitterStock: 10 },
+    { id: 'clear', name: 'LIMPIEZA DE ZONA', desc: 'Mapa Procedural. Elimina hostiles.', emitterStock: 5 },
+    { id: 'survival', name: 'SUPERVIVENCIA', desc: '[WIP] Resiste en un mapa infinito.', emitterStock: -1 },
+    { id: 'pvp', name: 'DEATHMATCH', desc: '[WIP] Combate 4 jugadores.', emitterStock: 0 }
 ];
 
 // Estado del Menú de Modos

@@ -31,7 +31,7 @@ class Grid {
         this.staticCtx = this.staticLayer.getContext('2d');
     }
 
-    loadLevel(levelId) {
+    loadLevel(levelId, modeId) {
         console.log(`🗺️ CARGANDO NIVEL: ${levelId}`);
         this.reset();
 
@@ -45,14 +45,14 @@ class Grid {
             this.marginLeft = (this.width - (this.cellSize * cols)) / 2;
             this.marginTop = (this.height - (this.cellSize * rows)) / 2;
             
-            this.parseSchematic(layout);
+            this.parseSchematic(layout, modeId);
         } else {
             // MODO ROBOT
             this.cellSize = Math.min(this.width / CONFIG.COLS, this.height / CONFIG.ROWS);
             this.marginLeft = (this.width - (this.cellSize * CONFIG.COLS)) / 2;
             this.marginTop = (this.height - (this.cellSize * CONFIG.ROWS)) / 2;
             
-            this.generateProcedural();
+            this.generateProcedural(modeId);
         }
 
         this.bakeStaticLayer();
@@ -72,7 +72,7 @@ class Grid {
     // ==========================================
     // PARSER AVANZADO (AHORA CON TIPOS)
     // ==========================================
-    parseSchematic(layout) {
+    parseSchematic(layout, modeId) {
         const parsedData = this.mapParser.parse(layout);
         
         this.map = parsedData.map;
@@ -80,25 +80,28 @@ class Grid {
         this.playerSpawns = parsedData.playerSpawns;
         this.staticEnemies = parsedData.staticEnemies;
         
+        const mode = GAME_MODES.find(m => m.id === modeId) || { emitterStock: 0 };
+        
         parsedData.emittersToCreate.forEach(emitter => {
-            this.addEmitter(emitter.c, emitter.r, emitter.type);
+            this.addEmitter(emitter.c, emitter.r, emitter.type, mode.emitterStock);
         });
     }
 
-    addEmitter(c, r, type) {
+    addEmitter(c, r, type, stock) {
         // Configuramos el emisor con un cooldown inicial aleatorio para que no spawneen todos a la vez
         this.emitters.push({
             c, r,
             type: type,
             cooldown: 300, // 5 segundos base entre spawns (a 60fps)
-            timer: Math.floor(Math.random() * 300) 
+            timer: Math.floor(Math.random() * 300),
+            stock: stock
         });
     }
 
     // ==========================================
     // PROCEDURAL (LEGACY ADAPTER)
     // ==========================================
-    generateProcedural() {
+    generateProcedural(modeId) {
         this.map = Array(CONFIG.ROWS).fill().map(() => Array(CONFIG.COLS).fill(1));
         // ... (Tu algoritmo de laberinto va aquí igual que antes) ...
         const wCorr = CONFIG.MAZE_CORRIDOR_WIDTH || 2;
@@ -137,10 +140,10 @@ class Grid {
         }
 
         // En procedural, como no hay mapa ASCII, creamos emisores aleatorios
-        this.findStrategicSpawns();
+        this.findStrategicSpawns(modeId);
     }
 
-    findStrategicSpawns() {
+    findStrategicSpawns(modeId) {
         const candidates = [];
         const centerX = CONFIG.COLS / 2;
         const centerY = CONFIG.ROWS / 2;
@@ -159,9 +162,10 @@ class Grid {
         // Generadores cerca del centro
         candidates.sort((a, b) => a.dist - b.dist);
         const emitterCount = 4; 
+        const mode = GAME_MODES.find(m => m.id === modeId) || { emitterStock: 0 };
         for(let i=0; i<emitterCount; i++) {
             const pt = candidates[i];
-            if(pt) this.addEmitter(pt.c, pt.r, 'random');
+            if(pt) this.addEmitter(pt.c, pt.r, 'random', mode.emitterStock);
         }
     }
 
@@ -270,6 +274,14 @@ class Grid {
             const charge = 1 - (e.timer / e.cooldown);
             ctx.fillStyle = `rgba(255, 0, 255, ${charge * 0.8})`;
             ctx.fillRect(pt.x - size/2, pt.y - size/2, size, size * charge);
+            
+            // NUEVO: Indicador de Stock
+            if (e.stock !== -1) {
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 14px monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText(e.stock, pt.x, pt.y + size * 0.7);
+            }
         });
     }
 
