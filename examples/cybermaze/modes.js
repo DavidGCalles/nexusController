@@ -1,62 +1,124 @@
 // modes.js
+// ==========================================
+// GESTOR DE MENÚS (MODOS Y NIVELES)
+// ==========================================
+
 const GAME_MODES = [
-    { id: 'clear', name: 'LIMPIEZA DE ZONA', desc: 'Elimina todos los objetivos hostiles.' },
-    { id: 'survival', name: 'SUPERVIVENCIA', desc: '[MOCK] Resiste oleadas infinitas.' },
-    { id: 'ctf', name: 'CAPTURAR BANDERA', desc: '[MOCK] Roba la bandera enemiga.' },
-    { id: 'pvp', name: 'DEATHMATCH', desc: '[MOCK] Combate todos contra todos.' }
+    { id: 'operations', name: 'OPERACIONES', desc: 'Misiones tácticas en mapas diseñados.' },
+    { id: 'clear', name: 'LIMPIEZA DE ZONA', desc: 'Mapa Procedural. Elimina hostiles.' },
+    { id: 'survival', name: 'SUPERVIVENCIA', desc: '[WIP] Resiste en un mapa infinito.' },
+    { id: 'pvp', name: 'DEATHMATCH', desc: '[WIP] Combate 4 jugadores.' }
 ];
 
+// Estado del Menú de Modos
 let selectedModeIdx = 0;
-let modeSelectCooldown = 0;
-let modePlayers = []; // Referencia a los jugadores del lobby
+let modePlayers = []; 
+
+// Estado del Menú de Niveles
+let levelSelectActive = false;
+let selectedLevelIdx = 0;
+let availableLevels = []; // Se rellenará leyendo LEVELS
+
+let menuCooldown = 0;
 
 function initModeSelect(players) {
     modePlayers = players;
     selectedModeIdx = 0;
-    modeSelectCooldown = 20; // Pequeño delay para no seleccionar nada por accidente al entrar
+    menuCooldown = 20; 
+    levelSelectActive = false;
+    
+    // Cargar lista de niveles disponibles desde levels.js
+    if (typeof LEVELS !== 'undefined') {
+        availableLevels = Object.keys(LEVELS);
+    } else {
+        availableLevels = ['NO LEVELS FOUND'];
+    }
 }
 
+// ==========================================
+// UPDATE (Lógica de Navegación)
+// ==========================================
 function updateModeSelect() {
-    if (modeSelectCooldown > 0) modeSelectCooldown--;
-    
-    // Solo el Host (Player 0 de la lista de lobby) controla el menú
+    if (menuCooldown > 0) menuCooldown--;
     if (modePlayers.length === 0) return;
+
     const hostId = modePlayers[0].id;
     const pad = window.getController(hostId);
-    
     if (!pad) return;
 
-    // NAVEGACIÓN
-    // Asumiendo tu mando "Aviación" donde Arriba físico da valor Positivo (+1)
-    // Arriba (+1) -> Subir en la lista (Índice menor)
-    // Abajo (-1) -> Bajar en la lista (Índice mayor)
-    
-    if (modeSelectCooldown === 0) {
-        if (pad.axes.ly > 0.5 || pad.buttons.d_up) { 
-            // Stick Arriba o D-Pad Arriba -> ANTERIOR
-            selectedModeIdx = (selectedModeIdx - 1 + GAME_MODES.length) % GAME_MODES.length;
-            modeSelectCooldown = 12; // Velocidad de scroll
-        } 
-        else if (pad.axes.ly < -0.5 || pad.buttons.d_down) {
-            // Stick Abajo o D-Pad Abajo -> SIGUIENTE
-            selectedModeIdx = (selectedModeIdx + 1) % GAME_MODES.length;
-            modeSelectCooldown = 12;
+    // --- A. SUBMENÚ: SELECCIÓN DE NIVEL ---
+    if (levelSelectActive) {
+        if (menuCooldown === 0) {
+            // Navegar Arriba/Abajo
+            if (pad.axes.ly > 0.5 || pad.buttons.d_up) { 
+                selectedLevelIdx = (selectedLevelIdx - 1 + availableLevels.length) % availableLevels.length;
+                menuCooldown = 12;
+            } 
+            else if (pad.axes.ly < -0.5 || pad.buttons.d_down) {
+                selectedLevelIdx = (selectedLevelIdx + 1) % availableLevels.length;
+                menuCooldown = 12;
+            }
+            
+            // CONFIRMAR (A/Start) -> LANZAR JUEGO
+            if (pad.buttons.south || pad.buttons.start) {
+                const modeId = GAME_MODES[selectedModeIdx].id;
+                const levelId = availableLevels[selectedLevelIdx];
+                window.launchGame(modeId, levelId); // <--- Pasamos el Nivel
+            }
+            
+            // CANCELAR (B/East) -> Volver a Modos
+            if (pad.buttons.east) {
+                levelSelectActive = false;
+                menuCooldown = 15;
+            }
         }
+        return;
     }
 
-    // CONFIRMAR (Botón A/South o Start)
-    if ((pad.buttons.south || pad.buttons.start) && modeSelectCooldown === 0) {
-        // Lanzamos el juego
-        const modeId = GAME_MODES[selectedModeIdx].id;
-        window.launchGame(modeId);
+    // --- B. MENÚ PRINCIPAL: SELECCIÓN DE MODO ---
+    if (menuCooldown === 0) {
+        // Navegar
+        if (pad.axes.ly > 0.5 || pad.buttons.d_up) { 
+            selectedModeIdx = (selectedModeIdx - 1 + GAME_MODES.length) % GAME_MODES.length;
+            menuCooldown = 12; 
+        } 
+        else if (pad.axes.ly < -0.5 || pad.buttons.d_down) {
+            selectedModeIdx = (selectedModeIdx + 1) % GAME_MODES.length;
+            menuCooldown = 12;
+        }
+
+        // CONFIRMAR
+        if (pad.buttons.south || pad.buttons.start) {
+            const mode = GAME_MODES[selectedModeIdx];
+            
+            if (mode.id === 'operations') {
+                // Si es Operaciones, vamos al submenú
+                levelSelectActive = true;
+                selectedLevelIdx = 0;
+                menuCooldown = 15;
+            } else {
+                // Si es otro, lanzamos directo (Procedural)
+                window.launchGame(mode.id, null);
+            }
+        }
     }
 }
 
+// ==========================================
+// DRAW (Renderizado de UI)
+// ==========================================
 function drawModeSelect(ctx, w, h) {
-    // Fondo oscuro sobre el lobby
+    // Fondo
     ctx.fillStyle = '#050505';
     ctx.fillRect(0, 0, w, h);
 
+    // Si estamos seleccionando nivel, pintamos ese menú
+    if (levelSelectActive) {
+        drawLevelMenu(ctx, w, h);
+        return;
+    }
+
+    // --- MENÚ DE MODOS ---
     ctx.textAlign = 'center';
     
     // Título
@@ -64,10 +126,9 @@ function drawModeSelect(ctx, w, h) {
     ctx.shadowColor = '#00ffff';
     ctx.shadowBlur = 10;
     ctx.font = 'bold 60px Segoe UI';
-    ctx.fillText("SELECCIONAR MISIÓN", w/2, h * 0.2);
+    ctx.fillText("SELECCIONAR MODO", w/2, h * 0.2);
     ctx.shadowBlur = 0;
 
-    // Lista de Modos
     const startY = h * 0.4;
     const gap = 70;
 
@@ -76,31 +137,66 @@ function drawModeSelect(ctx, w, h) {
         const y = startY + i * gap;
 
         if (isSelected) {
-            // Opción Seleccionada
             ctx.fillStyle = '#00ffff';
             ctx.font = 'bold 45px Segoe UI';
             ctx.fillText(`> ${mode.name} <`, w/2, y);
             
-            // Descripción
             ctx.fillStyle = '#aaaaaa';
             ctx.font = 'italic 24px Segoe UI';
-            ctx.fillText(mode.desc, w/2, h * 0.85); // Descripción abajo del todo
+            ctx.fillText(mode.desc, w/2, h * 0.85);
             
-            // Efecto Box (Opcional)
             ctx.strokeStyle = '#00ffff';
             ctx.lineWidth = 2;
             ctx.strokeRect(w/2 - 250, y - 40, 500, 55);
-
         } else {
-            // Opción Normal
             ctx.fillStyle = '#444';
             ctx.font = '30px Segoe UI';
             ctx.fillText(mode.name, w/2, y);
         }
     });
 
-    // Footer Instrucciones
-    ctx.fillStyle = '#ffff00';
+    drawFooter(ctx, w, h, "A: SELECT  |  HOST ONLY");
+}
+
+function drawLevelMenu(ctx, w, h) {
+    ctx.textAlign = 'center';
+    
+    ctx.fillStyle = '#ffff00'; // Amarillo táctico
+    ctx.shadowColor = '#ffff00';
+    ctx.shadowBlur = 10;
+    ctx.font = 'bold 60px Segoe UI';
+    ctx.fillText("OPERACIONES: MISIONES", w/2, h * 0.2);
+    ctx.shadowBlur = 0;
+
+    const startY = h * 0.4;
+    const gap = 60;
+
+    if (availableLevels.length === 0) {
+        ctx.fillStyle = '#555';
+        ctx.fillText("NO DATA FOUND", w/2, h/2);
+        return;
+    }
+
+    availableLevels.forEach((lvl, i) => {
+        const isSelected = i === selectedLevelIdx;
+        const y = startY + i * gap;
+
+        if (isSelected) {
+            ctx.fillStyle = '#ffff00';
+            ctx.font = 'bold 40px Segoe UI';
+            ctx.fillText(`[ ${lvl} ]`, w/2, y);
+        } else {
+            ctx.fillStyle = '#554400';
+            ctx.font = '30px Segoe UI';
+            ctx.fillText(lvl, w/2, y);
+        }
+    });
+
+    drawFooter(ctx, w, h, "A: DEPLOY  |  B: BACK");
+}
+
+function drawFooter(ctx, w, h, text) {
+    ctx.fillStyle = '#fff';
     ctx.font = '20px monospace';
-    ctx.fillText("HOST: SELECT MISSION & PRESS START", w/2, h - 50);
+    ctx.fillText(text, w/2, h - 50);
 }

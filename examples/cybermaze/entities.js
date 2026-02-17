@@ -2,13 +2,13 @@
 
 // 1. DEFINIMOS RATIOS (Proporción respecto al tamaño de una celda)
 const ENTITY_RATIOS = {
-    PLAYER_SPEED: 0.015,      // ~4.5px en tile de 30px
+    PLAYER_SPEED: 0.03,      // ~4.5px en tile de 30px
     PLAYER_RADIUS: 0.35,     // ~10.5px (Total ancho 70% del pasillo)
     
     BULLET_SPEED: 0.5,       // Rápido
     BULLET_RADIUS: 0.12,     
     
-    ENEMY_SPEED: 0.009,       
+    ENEMY_SPEED: 0.01,       
     ENEMY_VISION: 12.0,      // Ve 12 celdas de distancia (en lugar de 400px fijos)
     
     // UI Scaling
