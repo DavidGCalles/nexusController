@@ -39,6 +39,7 @@ window.launchGame = function(modeId) {
 
     gameGrid = new Grid(w, h); 
     gameGrid.generate();
+    updateEntityScale(gameGrid.cellSize);
 
     // 1. SPAWN JUGADORES (Periferia)
     players = lobbyData.map((p) => {
