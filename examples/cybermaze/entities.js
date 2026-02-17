@@ -6,11 +6,11 @@
 // 1. CONFIGURACIÓN
 // ==========================================
 const ENTITY_RATIOS = {
-    PLAYER_SPEED: 0.15,
+    PLAYER_SPEED: 0.09,
     PLAYER_RADIUS: 0.35,
     BULLET_SPEED: 0.5,
     BULLET_RADIUS: 0.12,
-    ENEMY_SPEED: 0.09,
+    ENEMY_SPEED: 0.03,
     ENEMY_VISION: 14.0, 
     UI_BAR_WIDTH: 0.8,
     UI_BAR_HEIGHT: 0.1,
