@@ -40,17 +40,12 @@ window.launchGame = function(modeId, levelId) {
     currentMode = modeId;
 
     gameGrid = new Grid(w, h); 
-    
-    // Si levelId es null/undefined, cargamos 'RANDOM' (Grid lo interpretará como procedural)
     const mapToLoad = levelId || 'RANDOM';
-    
-    // Carga el mapa y recalcula la escala de físicas según el tamaño de celda resultante
     const finalCellSize = gameGrid.loadLevel(mapToLoad);
     updateEntityScale(finalCellSize); 
 
     // 1. SPAWN JUGADORES
     players = lobbyData.map((p, index) => {
-        // Pasamos index para usar spawns fijos (P1..P4) si existen en el mapa
         const spawn = gameGrid.getPlayerSpawn(index);
         return new Player(p.id, spawn.x, spawn.y, p.color);
     });
@@ -58,25 +53,11 @@ window.launchGame = function(modeId, levelId) {
     bullets = []; 
     enemies = [];
 
-    // 2. SPAWN ENEMIGOS
-    // Si el mapa es manual, usamos sus Spawners. Si es procedural, generamos aleatorios.
-    const numEnemies = 12; // Base para procedural
-
-    // Si el Grid detectó spawners manuales, los usamos
-    if (gameGrid.enemySpawners.length > 0) {
-        // Spawnear un enemigo en cada spawner definido
-        gameGrid.enemySpawners.forEach(sp => {
-            const px = gameGrid.gridToPixel(sp.r, sp.c);
-            // Tipo aleatorio o definir lógica en el futuro
-            enemies.push(new Enemy(randomEnemyType(), px.x, px.y));
-        });
-    } else {
-        // Procedural Spawning (Fallback)
-        for (let i = 0; i < numEnemies; i++) {
-            const spawn = gameGrid.getEnemySpawn(); // Heurístico
-            enemies.push(new Enemy(randomEnemyType(), spawn.x, spawn.y));
-        }
-    }
+    // 2. SPAWN ENEMIGOS ESTÁTICOS (Guarnición)
+    gameGrid.staticEnemies.forEach(e => {
+        const px = gameGrid.gridToPixel(e.r, e.c);
+        enemies.push(new Enemy(e.type, px.x, px.y));
+    });
 
     gameState = 'playing';
 }
@@ -161,6 +142,31 @@ function loop() {
                 player.draw(ctx);
             }
         });
+
+        // 4. GESTIÓN DE EMISORES (Generadores de Enemigos)
+        if (gameGrid) {
+            gameGrid.emitters.forEach(emitter => {
+                emitter.timer--;
+                if (emitter.timer <= 0) {
+                    // Resetear timer
+                    emitter.timer = emitter.cooldown;
+                    
+                    // Comprobar límite de población para no saturar
+                    if (enemies.length < 30) {
+                        const px = gameGrid.gridToPixel(emitter.r, emitter.c);
+                        
+                        // Determinar tipo
+                        let typeToSpawn = emitter.type;
+                        if (typeToSpawn === 'random') {
+                             typeToSpawn = randomEnemyType();
+                        }
+                        
+                        // Efecto de spawn (opcional) y creación
+                        enemies.push(new Enemy(typeToSpawn, px.x, px.y));
+                    }
+                }
+            });
+        }
 
         // 4. ENEMIGOS (IA OODA)
         let activeEnemies = 0;
