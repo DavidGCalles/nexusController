@@ -117,8 +117,11 @@ class Pathfinder {
 
     isWalkable(map, p) {
         if (!this.isValid(map, p)) return false;
-        // Solo 0 (Aire) es caminable. 1 (Muro) y 2 (Destructible) bloquean.
-        return map[p.r][p.c] === 0;
+        
+        const cell = map[p.r][p.c];
+        // AHORA PERMITIMOS: 0 (Aire), 3 (Base Aliada), 4 (Base Enemiga)
+        // BLOQUEAMOS: 1 (Muro), 2 (Destructible)
+        return cell === 0 || cell === 3 || cell === 4;
     }
 
     findWalkableNeighbor(map, p) {
