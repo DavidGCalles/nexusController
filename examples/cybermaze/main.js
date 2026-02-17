@@ -187,7 +187,7 @@ function loop() {
                 }
             }
 
-            e.update(gameGrid, players, bullets, activeNoises, w, h);
+            e.update(gameGrid, players, bullets, w, h);
             e.draw(ctx);
 
             // Daño por contacto
