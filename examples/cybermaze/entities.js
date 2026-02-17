@@ -233,7 +233,8 @@ class Player extends LivingEntity {
     }
 }
 
-// 4. SISTEMA DE IA AVANZADA (OODA + FSM + LKP)
+// ==========================================
+// 4. SISTEMA DE IA TÁCTICA (Miedo + Cobertura)
 // ==========================================
 
 // --- DEFINICIÓN DE ESTADOS ---
@@ -246,13 +247,14 @@ class EnemyState {
 
 class IdleState extends EnemyState {
     enter(enemy) { 
-        enemy.stateIcon = null; // Limpio
+        enemy.stateIcon = null; 
     } 
     execute(enemy, grid, perception) {
         if (perception.visibleEnemies.length > 0) {
             enemy.changeState(new CombatState(perception.visibleEnemies[0].entity));
             return;
         }
+        // TODO: Patrulla aleatoria aquí
     }
 }
 
@@ -263,13 +265,39 @@ class CombatState extends EnemyState {
     }
     enter(enemy) { 
         enemy.stateIcon = '!'; 
-        enemy.iconColor = '#ff0000'; // Rojo Alerta
+        enemy.iconColor = '#ff0000'; // Rojo Agresivo
     } 
     execute(enemy, grid, perception) {
+        const distToTarget = Math.hypot(this.target.x - enemy.x, this.target.y - enemy.y);
+        
+        // 1. EVALUACIÓN DE SUPERVIVENCIA (El Bucle del Miedo)
+        const lowHealth = enemy.hp < enemy.maxHp * 0.3;
+        const takingFire = enemy.wasHitRecently > 0; // Necesitamos añadir este contador en Enemy
+        const isMelee = !enemy.canShoot;
+
+        // Si estoy muriendo, HUYO.
+        if (lowHealth) {
+            enemy.changeState(new RetreatState(this.target));
+            return;
+        }
+
+        // Si soy melee, estoy lejos (> 250px) y me disparan: BUSCO COBERTURA (No cargo a lo loco)
+        if (isMelee && takingFire && distToTarget > 250) {
+            const cover = enemy.findCover(grid, this.target);
+            if (cover) {
+                // Ir a cobertura en lugar de al jugador
+                enemy.navTarget = cover;
+                return; 
+            }
+        }
+
+        // 2. COMBATE ESTÁNDAR
         const stillVisible = perception.visibleEnemies.find(e => e.entity === this.target);
         
         if (stillVisible) {
             enemy.memory.lkp = { x: this.target.x, y: this.target.y };
+            
+            // Si no estoy buscando cobertura, voy a por el objetivo
             enemy.navTarget = { x: this.target.x, y: this.target.y };
             
             if (enemy.canShoot && grid.hasLineOfSight(enemy.x, enemy.y, this.target.x, this.target.y)) {
@@ -277,6 +305,44 @@ class CombatState extends EnemyState {
             }
         } else {
             enemy.changeState(new AlertState(enemy.memory.lkp));
+        }
+    }
+}
+
+class RetreatState extends EnemyState {
+    constructor(threat) {
+        super();
+        this.threat = threat;
+        this.patience = 120; // 2 segundos intentando huir
+    }
+    enter(enemy) {
+        enemy.stateIcon = '💔'; // Icono de pánico/herido
+        enemy.iconColor = '#ff00ff'; 
+        enemy.navTarget = null;
+    }
+    execute(enemy, grid, perception) {
+        this.patience--;
+
+        // 1. Buscar Cobertura (Sitio donde NO vea a la amenaza)
+        if (!enemy.navTarget || enemy.hasReachedTarget()) {
+            const cover = enemy.findCover(grid, this.threat);
+            if (cover) {
+                enemy.navTarget = cover;
+            } else {
+                // Si no hay cobertura, correr en dirección opuesta (Flee vector simple)
+                const angle = Math.atan2(enemy.y - this.threat.y, enemy.x - this.threat.x);
+                const fleeDist = 100;
+                enemy.navTarget = {
+                    x: enemy.x + Math.cos(angle) * fleeDist,
+                    y: enemy.y + Math.sin(angle) * fleeDist
+                };
+            }
+        }
+
+        // 2. Condición de Salida: Si me curo (futuro) o pierdo de vista al enemigo mucho tiempo
+        // Por ahora, si se acaba la paciencia, volvemos a Alert para reevaluar
+        if (this.patience <= 0) {
+            enemy.changeState(new AlertState(enemy.memory.lkp || {x: enemy.x, y: enemy.y}));
         }
     }
 }
@@ -289,14 +355,13 @@ class AlertState extends EnemyState {
     }
     enter(enemy) { 
         enemy.stateIcon = '?'; 
-        enemy.iconColor = '#ffff00'; // Amarillo Duda
+        enemy.iconColor = '#ffff00'; 
     } 
     execute(enemy, grid, perception) {
         if (perception.visibleEnemies.length > 0) {
             enemy.changeState(new CombatState(perception.visibleEnemies[0].entity));
             return;
         }
-
         if (this.location) {
             const dist = Math.hypot(this.location.x - enemy.x, this.location.y - enemy.y);
             if (dist > enemy.radius) {
@@ -305,7 +370,6 @@ class AlertState extends EnemyState {
                 this.location = null; 
             }
         }
-
         this.timer--;
         if (this.timer <= 0) {
             enemy.changeState(new IdleState());
@@ -313,7 +377,7 @@ class AlertState extends EnemyState {
     }
 }
 
-// --- CLASE ENEMIGO ---
+// --- CLASE ENEMIGO ACTUALIZADA ---
 
 class Enemy extends LivingEntity {
     constructor(type, x, y) {
@@ -323,12 +387,11 @@ class Enemy extends LivingEntity {
         this.configureArchetype(type);
         this.baseColor = this.color; 
 
-        // CEREBRO
         this.currentState = new IdleState();
         this.memory = { lkp: null }; 
         this.navTarget = null;
+        this.wasHitRecently = 0; // Cooldown de "dolor"
         
-        // VISUALS
         this.stateIcon = null;
         this.iconColor = '#fff';
         
@@ -338,6 +401,7 @@ class Enemy extends LivingEntity {
     }
 
     configureArchetype(type) {
+        // ... (Igual que antes) ...
         this.radius = ENTITY_CONFIG.PLAYER_RADIUS;
         if (type === 'square') {
             this.hp = this.maxHp = 100;
@@ -366,6 +430,9 @@ class Enemy extends LivingEntity {
     update(grid, players, bullets, w, h) {
         if (this.isDead) return;
 
+        // Gestión del contador de dolor
+        if (this.wasHitRecently > 0) this.wasHitRecently--;
+
         const perception = this.sense(grid, players);
 
         if (this.currentState) {
@@ -376,6 +443,55 @@ class Enemy extends LivingEntity {
         if (this.canShoot) this.updateCooldown(bullets);
     }
 
+    // --- NUEVO CEREBRO TÁCTICO: BUSCAR COBERTURA ---
+    findCover(grid, threat) {
+        // Busca en un radio alrededor de sí mismo
+        const searchRadius = 4; // Celdas
+        const myGridPos = grid.pixelToGrid(this.x, this.y);
+        let bestCover = null;
+        let minDistToMe = Infinity;
+
+        // Barrido simple alrededor
+        for (let r = -searchRadius; r <= searchRadius; r++) {
+            for (let c = -searchRadius; c <= searchRadius; c++) {
+                const checkR = myGridPos.r + r;
+                const checkC = myGridPos.c + c;
+                
+                // Si es un suelo válido (Pathfinder.isWalkable lógica manual aquí o helper)
+                if (grid.isValid(checkR, checkC) && (grid.map[checkR][checkC] === 0 || grid.map[checkR][checkC] === 3 || grid.map[checkR][checkC] === 4)) {
+                    const pixelPos = grid.gridToPixel(checkR, checkC);
+                    
+                    // CRÍTICO: ¿Desde aquí veo a la amenaza?
+                    // Si NO la veo, es cobertura.
+                    if (!grid.hasLineOfSight(pixelPos.x, pixelPos.y, threat.x, threat.y)) {
+                        
+                        // Queremos la cobertura más cercana a mí para llegar rápido
+                        const distToMe = Math.hypot(pixelPos.x - this.x, pixelPos.y - this.y);
+                        
+                        // Pero que no me acerque al enemigo (Opcional, pero inteligente)
+                        const distToEnemy = Math.hypot(pixelPos.x - threat.x, pixelPos.y - threat.y);
+                        const currentDist = Math.hypot(this.x - threat.x, this.y - threat.y);
+
+                        // Solo aceptamos cobertura si no me acerco suicidamente
+                        if (distToMe < minDistToMe && distToEnemy >= currentDist * 0.8) {
+                            minDistToMe = distToMe;
+                            bestCover = pixelPos;
+                        }
+                    }
+                }
+            }
+        }
+        return bestCover;
+    }
+
+    hasReachedTarget() {
+        if (!this.navTarget) return true;
+        const dist = Math.hypot(this.navTarget.x - this.x, this.navTarget.y - this.y);
+        return dist < this.radius;
+    }
+
+    // ... (Métodos sense, move, tryShoot, updateCooldown, drawUI se mantienen) ...
+    
     sense(grid, players) {
         const visible = [];
         players.forEach(p => {
@@ -439,12 +555,17 @@ class Enemy extends LivingEntity {
 
     takeDamage(amount) {
         super.takeDamage(amount);
+        
+        // ¡Me han dado! Activar instinto de conservación
+        this.wasHitRecently = 60; // 1 segundo de "pánico/alerta" por impacto
+
         if (this.currentState instanceof IdleState) {
             this.changeState(new AlertState({ x: this.x, y: this.y }));
         }
     }
 
     draw(ctx) {
+        // Copiar el draw anterior, asegurando que llama a this.drawUI(ctx)
         ctx.fillStyle = this.color;
         ctx.shadowColor = this.color;
         ctx.shadowBlur = 10;
@@ -463,10 +584,8 @@ class Enemy extends LivingEntity {
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        // UI & HUD
         this.drawUI(ctx);
-        
-        // MARKER LKP (X)
+        // Debug LKP
         if (this.memory.lkp) {
             ctx.strokeStyle = 'rgba(255, 255, 0, 0.5)';
             ctx.lineWidth = 2;
@@ -480,15 +599,11 @@ class Enemy extends LivingEntity {
         }
     }
 
-    // SOBREESCRIBIMOS DRAWUI PARA INCLUIR ICONOS DE ESTADO
     drawUI(ctx) {
-        super.drawUI(ctx); // Dibuja la barra de vida normal
-
-        // Icono de Estado ( ! / ? )
+        super.drawUI(ctx); 
         if (this.stateIcon) {
             const y = this.y - this.radius - ENTITY_CONFIG.UI_Y_OFFSET - 5;
             ctx.textAlign = 'center';
-            // Escala del icono basada en el radio
             ctx.font = `bold ${this.radius * 1.8}px monospace`;
             ctx.fillStyle = this.iconColor;
             ctx.shadowBlur = 5;
