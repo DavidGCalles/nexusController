@@ -23,6 +23,7 @@ class Grid {
         this.enemySpawnCandidates = []; // Legacy (Procedural)
 
         this.pathfinder = new Pathfinder(); 
+        this.mapParser = new MapParser(); 
 
         this.staticLayer = document.createElement('canvas');
         this.staticLayer.width = w;
@@ -72,48 +73,16 @@ class Grid {
     // PARSER AVANZADO (AHORA CON TIPOS)
     // ==========================================
     parseSchematic(layout) {
-        const rows = layout.length;
-        const cols = layout[0].length;
+        const parsedData = this.mapParser.parse(layout);
         
-        this.map = Array(rows).fill().map(() => Array(cols).fill(0));
-
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                const char = layout[r][c];
-                let val = 0; // Por defecto suelo (.)
-
-                switch(char) {
-                    // TERRENO
-                    case '#': val = 1; break; // Muro
-                    case '+': 
-                        val = 2; 
-                        this.destructibles.push({ c, r, active: true });
-                        break;
-                    case '_': val = 3; break; // Base Aliada
-                    case '^': val = 4; break; // Base Enemiga
-                    
-                    // SPAWNS JUGADOR
-                    case '1': this.playerSpawns[0] = { c, r }; break;
-                    case '2': this.playerSpawns[1] = { c, r }; break;
-                    case '3': this.playerSpawns[2] = { c, r }; break;
-                    case '4': this.playerSpawns[3] = { c, r }; break;
-
-                    // ENEMIGOS ESTÁTICOS (Minúsculas)
-                    case 'x': this.staticEnemies.push({ c, r, type: 'square' }); break;
-                    case 'o': this.staticEnemies.push({ c, r, type: 'circle' }); break;
-                    case 'd': this.staticEnemies.push({ c, r, type: 'diamond' }); break;
-
-                    // GENERADORES / EMISORES (Mayúsculas)
-                    case 'X': this.addEmitter(c, r, 'square'); break;
-                    case 'O': this.addEmitter(c, r, 'circle'); break;
-                    case 'D': this.addEmitter(c, r, 'diamond'); break;
-                    case 'S': this.addEmitter(c, r, 'random'); break; // Legacy
-                    
-                    default: val = 0;
-                }
-                this.map[r][c] = val;
-            }
-        }
+        this.map = parsedData.map;
+        this.destructibles = parsedData.destructibles;
+        this.playerSpawns = parsedData.playerSpawns;
+        this.staticEnemies = parsedData.staticEnemies;
+        
+        parsedData.emittersToCreate.forEach(emitter => {
+            this.addEmitter(emitter.c, emitter.r, emitter.type);
+        });
     }
 
     addEmitter(c, r, type) {
