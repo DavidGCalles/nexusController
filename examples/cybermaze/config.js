@@ -1,8 +1,8 @@
 // config.js
 const CONFIG = {
     // Dimensiones
-    COLS: 30, 
-    ROWS: 30,
+    COLS: 50, 
+    ROWS: 50,
 
     // GENERACIÓN DE LABERINTO
     MAZE_CORRIDOR_WIDTH: 2,
