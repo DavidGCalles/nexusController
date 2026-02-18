@@ -148,7 +148,9 @@ function loop() {
             for (let i = gameGrid.emitters.length - 1; i >= 0; i--) {
                 const emitter = gameGrid.emitters[i];
 
+                // Si un emisor agotó su stock en el frame anterior, se elimina ahora.
                 if (emitter.stock === 0) {
+                    console.log(`EMITTER REMOVED: Stock is 0.`, emitter);
                     gameGrid.emitters.splice(i, 1);
                     continue;
                 }
@@ -167,8 +169,10 @@ function loop() {
                         
                         enemies.push(new Enemy(typeToSpawn, px.x, px.y));
 
+                        // Solo se reduce el stock si es un número finito (no infinito -1)
                         if (emitter.stock > 0) {
                             emitter.stock--;
+                             console.log(`EMITTER SPAWN: Stock reduced to ${emitter.stock}`, emitter);
                         }
                     }
                 }

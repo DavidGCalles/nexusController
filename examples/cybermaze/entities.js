@@ -348,31 +348,74 @@ class RetreatState extends EnemyState {
 }
 
 class AlertState extends EnemyState {
-    constructor(location) {
+    constructor(lkp) {
         super();
-        this.location = location; 
-        this.timer = ENTITY_CONFIG.ALERT_DURATION;
+        this.lkp = lkp;
+        this.phase = 'APPROACH'; // APPROACH, OBSERVE, SWEEP
+        this.timer = 0;
+        this.sweeps = 0;
     }
-    enter(enemy) { 
-        enemy.stateIcon = '?'; 
-        enemy.iconColor = '#ffff00'; 
-    } 
+
+    enter(enemy) {
+        enemy.stateIcon = '?';
+        enemy.iconColor = '#ffff00';
+        this.executePhase(enemy);
+    }
+
     execute(enemy, grid, perception) {
         if (perception.visibleEnemies.length > 0) {
             enemy.changeState(new CombatState(perception.visibleEnemies[0].entity));
             return;
         }
-        if (this.location) {
-            const dist = Math.hypot(this.location.x - enemy.x, this.location.y - enemy.y);
-            if (dist > enemy.radius) {
-                enemy.navTarget = this.location;
-            } else {
-                this.location = null; 
-            }
-        }
+
         this.timer--;
         if (this.timer <= 0) {
-            enemy.changeState(new IdleState());
+            this.executePhase(enemy);
+        } else if (enemy.hasReachedTarget()) {
+             // Si llega antes de que acabe el timer (ej. en Approach), pasamos a la siguiente fase
+            this.timer = 0;
+            this.executePhase(enemy);
+        }
+    }
+
+    executePhase(enemy) {
+        const grid = enemy.grid; // Necesitamos acceso al grid
+
+        if (this.phase === 'APPROACH') {
+            const vantagePoint = enemy.findVantagePoint(grid, this.lkp);
+            enemy.navTarget = vantagePoint || this.lkp; // Fallback al LKP
+            this.phase = 'OBSERVE';
+            // No ponemos timer, la condición de llegada nos hará pasar de fase
+        } 
+        else if (this.phase === 'OBSERVE') {
+            this.timer = 60; // 1 segundo de observación
+            this.phase = 'SWEEP';
+        }
+        else if (this.phase === 'SWEEP') {
+            if (this.sweeps >= 2) {
+                enemy.changeState(new IdleState());
+                return;
+            }
+
+            this.sweeps++;
+            // Generar un punto aleatorio cercano para investigar
+            const randomAngle = Math.random() * Math.PI * 2;
+            const randomDist = 150 + Math.random() * 100; // Radio medio
+            const searchPos = {
+                x: enemy.x + Math.cos(randomAngle) * randomDist,
+                y: enemy.y + Math.sin(randomAngle) * randomDist
+            };
+            
+            // Buscar una posición segura cerca del punto aleatorio
+            const safeSearchPoint = enemy.findVantagePoint(grid, searchPos);
+            enemy.navTarget = safeSearchPoint || searchPos; // Fallback al punto aleatorio
+
+            this.phase = 'SWEEP_MOVE';
+        }
+        else if (this.phase === 'SWEEP_MOVE') {
+             // Al llegar al punto de sweep, observamos un poco y preparamos el siguiente sweep
+            this.phase = 'OBSERVE';
+            this.timer = 45; // 0.75s de observación
         }
     }
 }
@@ -429,6 +472,7 @@ class Enemy extends LivingEntity {
 
     update(grid, players, bullets, w, h) {
         if (this.isDead) return;
+        this.grid = grid; // Referencia para estados complejos
 
         // Gestión del contador de dolor
         if (this.wasHitRecently > 0) this.wasHitRecently--;
@@ -444,6 +488,48 @@ class Enemy extends LivingEntity {
     }
 
     // --- NUEVO CEREBRO TÁCTICO: BUSCAR COBERTURA ---
+    findVantagePoint(grid, targetPos) {
+        const searchRadius = 8; 
+        const myGridPos = grid.pixelToGrid(this.x, this.y);
+        let bestVantage = null;
+        let bestScore = -1;
+
+        for (let r = -searchRadius; r <= searchRadius; r++) {
+            for (let c = -searchRadius; c <= searchRadius; c++) {
+                const checkR = myGridPos.r + r;
+                const checkC = myGridPos.c + c;
+                
+                if (grid.isValid(checkR, checkC) && (grid.map[checkR][checkC] === 0 || grid.map[checkR][checkC] === 3 || grid.map[checkR][checkC] === 4)) {
+                    const pixelPos = grid.gridToPixel(checkR, checkC);
+                    
+                    if (grid.hasLineOfSight(pixelPos.x, pixelPos.y, targetPos.x, targetPos.y)) {
+                        let score = 0;
+                        let wallCount = 0;
+                        for (let dr = -1; dr <= 1; dr++) {
+                            for (let dc = -1; dc <= 1; dc++) {
+                                if (dr === 0 && dc === 0) continue;
+                                if (!grid.isValid(checkR + dr, checkC + dc) || grid.map[checkR + dr][checkC + dc] === 1) {
+                                    wallCount++;
+                                }
+                            }
+                        }
+
+                        score += wallCount * 10; 
+
+                        const distToMe = Math.hypot(pixelPos.x - this.x, pixelPos.y - this.y);
+                        score -= distToMe / grid.cellSize;
+
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestVantage = pixelPos;
+                        }
+                    }
+                }
+            }
+        }
+        return bestVantage;
+    }
+
     findCover(grid, threat) {
         // Busca en un radio alrededor de sí mismo
         const searchRadius = 4; // Celdas
