@@ -483,7 +483,7 @@ class Enemy extends LivingEntity {
         this.currentState.enter(this);
     }
 
-    update(grid, players, bullets, w, h) {
+    update(grid, players, bullets, w, h, enemies) {
         if (this.isDead) return;
         this.grid = grid; // Referencia para estados complejos
 
@@ -496,7 +496,7 @@ class Enemy extends LivingEntity {
             this.currentState.execute(this, grid, perception);
         }
 
-        this.move(grid);
+        this.move(grid, enemies);
         if (this.canShoot) this.updateCooldown(bullets);
     }
 
@@ -606,33 +606,73 @@ class Enemy extends LivingEntity {
         return { visibleEnemies: visible };
     }
 
-    move(grid) {
-        if (!this.navTarget) return;
+    move(grid, enemies) {
+        let moveX = 0;
+        let moveY = 0;
 
-        if (this.pathTimer > 0 && this.path.length > 0) {
-            this.pathTimer--;
-        } else {
-            this.path = grid.getPath(this.x, this.y, this.navTarget.x, this.navTarget.y);
-            this.pathTimer = 15;
+        // --- Pathfinding Movement ---
+        if (this.navTarget) {
+            if (this.pathTimer > 0 && this.path.length > 0) {
+                this.pathTimer--;
+            } else {
+                this.path = grid.getPath(this.x, this.y, this.navTarget.x, this.navTarget.y);
+                this.pathTimer = 15;
+            }
+
+            if (this.path && this.path.length > 0) {
+                const nextNode = this.path[0];
+                const dx = nextNode.x - this.x;
+                const dy = nextNode.y - this.y;
+                const dist = Math.hypot(dx, dy);
+
+                if (dist < this.radius * 0.5) { 
+                    this.path.shift();
+                } else {
+                    const angle = Math.atan2(dy, dx);
+                    const spd = ENTITY_CONFIG.ENEMY_SPEED * this.speedFactor;
+                    moveX = Math.cos(angle) * spd;
+                    moveY = Math.sin(angle) * spd;
+                }
+            }
         }
 
-        if (this.path && this.path.length > 0) {
-            const nextNode = this.path[0];
-            const dx = nextNode.x - this.x;
-            const dy = nextNode.y - this.y;
-            const dist = Math.hypot(dx, dy);
+        // --- Separation Behavior ---
+        let separationX = 0;
+        let separationY = 0;
+        const separationRadius = this.radius * 2.5; 
+        let neighbors = 0;
 
-            if (dist < this.radius * 0.5) { 
-                this.path.shift();
-            } else {
-                const angle = Math.atan2(dy, dx);
-                const spd = ENTITY_CONFIG.ENEMY_SPEED * this.speedFactor;
-                const mx = Math.cos(angle) * spd;
-                const my = Math.sin(angle) * spd;
-
-                if (!grid.checkCollision(this.x + mx, this.y, this.radius)) this.x += mx;
-                if (!grid.checkCollision(this.x, this.y + my, this.radius)) this.y += my;
+        for (const other of enemies) {
+            if (other === this || !other.alive) continue;
+            
+            const dist = Math.hypot(this.x - other.x, this.y - other.y);
+            if (dist < separationRadius && dist > 0) {
+                const dx = this.x - other.x;
+                const dy = this.y - other.y;
+                separationX += dx / dist;
+                separationY += dy / dist;
+                neighbors++;
             }
+        }
+
+        if (neighbors > 0) {
+            separationX /= neighbors;
+            separationY /= neighbors;
+            const sepMag = Math.hypot(separationX, separationY);
+            if (sepMag > 0) {
+                const spd = ENTITY_CONFIG.ENEMY_SPEED * this.speedFactor;
+                separationX = (separationX / sepMag) * spd * 1.2; // Separation is slightly stronger
+                separationY = (separationY / sepMag) * spd * 1.2;
+                
+                // --- Blend Behaviors ---
+                moveX = moveX * 0.6 + separationX * 0.4;
+                moveY = moveY * 0.6 + separationY * 0.4;
+            }
+        }
+
+        if (Math.abs(moveX) > 0.01 || Math.abs(moveY) > 0.01) {
+            if (!grid.checkCollision(this.x + moveX, this.y, this.radius)) this.x += moveX;
+            if (!grid.checkCollision(this.x, this.y + moveY, this.radius)) this.y += moveY;
         }
     }
 

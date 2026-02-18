@@ -186,25 +186,7 @@ function loop() {
             if (!e.alive) continue;
             activeEnemies++;
 
-            // Repulsión simple entre enemigos
-            for (let j = i + 1; j < enemies.length; j++) {
-                const other = enemies[j];
-                if (!other.alive) continue;
-                const dx = e.x - other.x;
-                const dy = e.y - other.y;
-                const dist = Math.hypot(dx, dy);
-                const minDist = e.radius + other.radius;
-                if (dist < minDist && dist > 0) {
-                    const push = (minDist - dist) / 2;
-                    const angle = Math.atan2(dy, dx);
-                    e.x += Math.cos(angle) * push;
-                    e.y += Math.sin(angle) * push;
-                    other.x -= Math.cos(angle) * push;
-                    other.y -= Math.sin(angle) * push;
-                }
-            }
-
-            e.update(gameGrid, players, bullets, w, h);
+            e.update(gameGrid, players, bullets, w, h, enemies);
             e.draw(ctx);
 
             // Daño por contacto
