@@ -250,11 +250,24 @@ class IdleState extends EnemyState {
         enemy.stateIcon = null; 
     } 
     execute(enemy, grid, perception) {
+        if (!enemy.spawnPoint) {
+            enemy.spawnPoint = { x: enemy.x, y: enemy.y };
+        }
         if (perception.visibleEnemies.length > 0) {
             enemy.changeState(new CombatState(perception.visibleEnemies[0].entity));
             return;
         }
-        // TODO: Patrulla aleatoria aquí
+
+        enemy.patrolTimer--;
+        if (enemy.patrolTimer <= 0 || !enemy.navTarget || enemy.hasReachedTarget()) {
+            const patrolRadius = 4 * (enemy.grid ? enemy.grid.cellSize : 16); 
+            const angle = Math.random() * Math.PI * 2;
+            const patrolX = enemy.spawnPoint.x + Math.cos(angle) * patrolRadius;
+            const patrolY = enemy.spawnPoint.y + Math.sin(angle) * patrolRadius;
+            
+            enemy.navTarget = { x: patrolX, y: patrolY };
+            enemy.patrolTimer = 180 + Math.random() * 120; // 3-5 seconds
+        }
     }
 }
 
