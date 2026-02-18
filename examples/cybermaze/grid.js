@@ -103,7 +103,6 @@ class Grid {
     // ==========================================
     generateProcedural(modeId) {
         this.map = Array(CONFIG.ROWS).fill().map(() => Array(CONFIG.COLS).fill(1));
-        // ... (Tu algoritmo de laberinto va aquí igual que antes) ...
         const wCorr = CONFIG.MAZE_CORRIDOR_WIDTH || 2;
         const step = wCorr * 2;
         const stack = [{ c: 1, r: 1 }];
@@ -139,7 +138,6 @@ class Grid {
             }
         }
 
-        // En procedural, como no hay mapa ASCII, creamos emisores aleatorios
         this.findStrategicSpawns(modeId);
     }
 

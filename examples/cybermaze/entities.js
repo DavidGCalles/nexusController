@@ -24,8 +24,8 @@ const ENTITY_CONFIG = {
     DASH_COST: 25,
     MAX_ENERGY: 100,
     ENERGY_REGEN: 0.8,
-    SHOT_COST: 10,
-    SHOT_COOLDOWN: 8,
+    SHOT_COST: 40,
+    SHOT_COOLDOWN: 15,
     BULLET_DAMAGE: 25,
     ENEMY_FIRE_RATE: 60,
     ALERT_DURATION: 240, 
@@ -326,7 +326,7 @@ class RetreatState extends EnemyState {
     constructor(threat) {
         super();
         this.threat = threat;
-        this.patience = 120; // 2 segundos intentando huir
+        this.patience = 350; // 6 segundos intentando huir
     }
     enter(enemy) {
         enemy.stateIcon = '💔'; // Icono de pánico/herido
@@ -457,20 +457,19 @@ class Enemy extends LivingEntity {
     }
 
     configureArchetype(type) {
-        // ... (Igual que antes) ...
         this.radius = ENTITY_CONFIG.PLAYER_RADIUS;
         if (type === 'square') {
-            this.hp = this.maxHp = 100;
+            this.hp = this.maxHp = 300;
             this.speedFactor = 0.8;
             this.color = '#ff0055';
             this.canShoot = false;
         } else if (type === 'circle') {
-            this.hp = this.maxHp = 50;
+            this.hp = this.maxHp = 180;
             this.speedFactor = 1.3;
             this.color = '#ff9900';
             this.canShoot = false;
         } else if (type === 'diamond') {
-            this.hp = this.maxHp = 60;
+            this.hp = this.maxHp = 150;
             this.speedFactor = 0.9;
             this.color = '#cc00ff';
             this.canShoot = true;
